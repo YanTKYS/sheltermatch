@@ -1,0 +1,128 @@
+name: 沖縄県用ABR Geocoderデータ生成
+
+# 住所ジオコーディングは、デジタル庁公式の @digital-go-jp/abr-geocoder を使用する。
+#
+# 以前使用していた jageocoder / jageocoder-converter は、
+# - PyPI版がjageocoder 2.2系と非互換
+# - GitHub main固定コミットでもcreate_index()がjageocoder 2.2のLocalTreeに
+#   存在しないAPIを呼び出しており失敗
+# - jageocoder-converter側のデータ取得先(data.address-br.digital.go.jp直リンク)への
+#   アクセスが403になる
+# - 都道府県コードを指定してもBaseRegistryConverterが01〜47を固定ループする
+# ことを実機で確認したため、この古いconverterを追従させる方向はとらず、
+# デジタル庁公式のCLIへ切り替えた。abr-geocoderは新しいDCAT形式APIと
+# 地域限定ダウンロード(-c オプション)を公式にサポートしている。
+#
+# 再現性のため、abr-geocoderはバージョンを固定してインストールする
+# （ブランチ・latest等は使用しない）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      accept_terms:
+        description: >-
+          デジタル庁「アドレス・ベース・レジストリ」のデータ利用規約を確認した場合のみ
+          true にしてください。false のままではデータ生成は実行されません。
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  build-data:
+    if: ${{ inputs.accept_terms }}
+    runs-on: ubuntu-latest
+    env:
+      ABR_GEOCODER_VERSION: "2.3.1"
+      # 沖縄県の全国地方公共団体コード（都道府県レベル）。
+      LG_CODE: "470007"
+
+    steps:
+      - name: Node.js のセットアップ
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: ABR Geocoderをインストール（バージョン固定）
+        run: npm install -g "@digital-go-jp/abr-geocoder@${ABR_GEOCODER_VERSION}"
+
+      - name: インストールされたバージョンを表示
+        run: |
+          node --version
+          npm --version
+          abrg --version
+
+      - name: 沖縄県のデータをダウンロード（都道府県コード470007のみ）
+        # --keep を付けないため、変換後にダウンロード元のCSV等は自動的に削除される。
+        run: abrg download -c "${LG_CODE}" -d work/okinawa_abr --silent
+
+      - name: 生成されたデータベースファイルを確認
+        run: ls -la work/okinawa_abr/database
+
+      - name: 住所検索を確認
+        # 単にSQLiteファイルが存在するだけでは成功扱いにせず、実際にCLIで
+        # ジオコーディングを実行し、沖縄県庁の住所（公開情報）で
+        # 緯度経度が取得できること・沖縄県内として一致すること・
+        # 町字(machiaza)より粗い結果ではないことを確認する。
+        run: |
+          echo "沖縄県那覇市泉崎一丁目2番2号" > work/verify_input.txt
+          abrg work/verify_input.txt work/verify_output.json -d work/okinawa_abr --format=json --silent
+          cat work/verify_output.json
+          node <<'JS'
+          const fs = require('fs');
+
+          const LEVEL_NUM = {
+            error: -1,
+            unknown: 0,
+            prefecture: 1,
+            city: 2,
+            machiaza: 3,
+            machiaza_detail: 4,
+            residential_block: 5,
+            residential_detail: 6,
+            parcel: 7,
+          };
+
+          const results = JSON.parse(fs.readFileSync('work/verify_output.json', 'utf8'));
+          if (!Array.isArray(results) || results.length === 0) {
+            console.error('住所を検索できませんでした。');
+            process.exit(1);
+          }
+
+          const r = results[0].result;
+          console.log(
+            `matched: ${r.output} match_level=${r.match_level} ` +
+            `coordinate_level=${r.coordinate_level} lat=${r.lat} lon=${r.lon} pref=${r.pref}`
+          );
+
+          if (r.lat === null || r.lon === null) {
+            console.error('緯度経度が返りませんでした。');
+            process.exit(1);
+          }
+          if (r.pref !== '沖縄県') {
+            console.error(`沖縄県内として一致しませんでした（pref=${r.pref}）。`);
+            process.exit(1);
+          }
+
+          const level = LEVEL_NUM[r.coordinate_level];
+          if (level === undefined || level < LEVEL_NUM.machiaza) {
+            console.error(`町字(machiaza)より粗い結果です（coordinate_level=${r.coordinate_level}）。`);
+            process.exit(1);
+          }
+
+          console.log('データとして利用可能であることを確認しました。');
+          JS
+
+      - name: データベースディレクトリをZIP化
+        # abr-geocoderは <abrgDir>/database 以下のSQLiteファイルのみを実行時に読み込む
+        # （キャッシュはSQLiteから自動的に再構築されるため含めない）。
+        # 展開したディレクトリをそのまま abrg の -d オプションに渡せるよう、
+        # database ディレクトリ自体をZIPのトップレベルに格納する。
+        working-directory: work/okinawa_abr
+        run: zip -r ../okinawa_abr_geocoder.zip database
+
+      - name: データZIPをArtifactとして保存
+        uses: actions/upload-artifact@v4
+        with:
+          name: okinawa-abr-geocoder-data
+          path: work/okinawa_abr_geocoder.zip
+          retention-days: 30
