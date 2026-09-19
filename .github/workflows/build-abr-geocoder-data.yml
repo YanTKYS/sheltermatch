@@ -112,17 +112,24 @@ jobs:
           console.log('データとして利用可能であることを確認しました。');
           JS
 
-      - name: データベースディレクトリをZIP化
+      - name: Artifact用にdatabaseディレクトリのみを配置
         # abr-geocoderは <abrgDir>/database 以下のSQLiteファイルのみを実行時に読み込む
         # （キャッシュはSQLiteから自動的に再構築されるため含めない）。
-        # 展開したディレクトリをそのまま abrg の -d オプションに渡せるよう、
-        # database ディレクトリ自体をZIPのトップレベルに格納する。
-        working-directory: work/okinawa_abr
-        run: zip -r ../okinawa_abr_geocoder.zip database
+        # ここで自前にZIPを作ってしまうと、actions/upload-artifactが
+        # そのZIPファイルをさらにZIPして配布するため、利用者が受け取るのは
+        # 「ZIPの中にZIP」という二重構造になってしまう。そのため、ZIP化はせず
+        # ディレクトリのまま upload-artifact に渡し、配布用ZIPの生成自体を
+        # 一段構造に留める。
+        run: |
+          mkdir -p work/artifact/database
+          cp work/okinawa_abr/database/*.sqlite work/artifact/database/
 
-      - name: データZIPをArtifactとして保存
+      - name: データをArtifactとして保存
+        # path に渡した work/artifact をZIPのルートとしてそのままZIP化するため、
+        # 利用者がダウンロードして展開すると database/ 以下にSQLiteファイルが
+        # 直接現れる（そのままsheltermatch.ipynbへアップロードできる構造）。
         uses: actions/upload-artifact@v4
         with:
           name: okinawa-abr-geocoder-data
-          path: work/okinawa_abr_geocoder.zip
+          path: work/artifact
           retention-days: 30
