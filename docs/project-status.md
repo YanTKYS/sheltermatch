@@ -1,6 +1,6 @@
 # sheltermatch 現状整理・開発方針
 
-更新日: 2026-09-19
+更新日: 2026-09-20
 
 ## 1. この文書の目的
 
@@ -83,7 +83,7 @@ API取得に失敗した場合はCSVアップロードへフォールバック�
 
 実行時には `ENABLE_HAZARD_CHECK` によって使用するか選択できるが、これは利用時の任意設定であり、開発上の優先度が低いことを意味しない。
 
-GeoJSONのPolygon / MultiPolygonを使用し、少なくとも以下を判定する。
+読み込んだGeoJSON / ShapefileをEPSG:4326のPolygon / MultiPolygonとして統合し、少なくとも以下を判定する。
 
 #### 要支援者地点
 
@@ -113,6 +113,8 @@ GeoJSONのPolygon / MultiPolygonを使用し、少なくとも以下を判定す
 複数種類に該当する場合は、該当種別を保持する。
 
 ハザード判定結果による候補の自動除外・自動順位変更は行わない。
+
+詳細なデータ取得・利用手順は [docs/hazard-data.md](./hazard-data.md) を参照。
 
 ---
 
@@ -180,15 +182,19 @@ ABR Geocoder自体は地域限定データ生成に対応しているが、GitHu
 * 避難所の災害種別対応情報の保持
 * geodesicによる距離計算
 * 上位 `TOP_N` 候補算出
-* GeoJSON読込
-* CRSのWGS84統一
+* GeoJSON単体・GeoJSONを含むZIP・Shapefileを含むZIPの読込（展開・変換不要でアップロード可能）
+* ZIP内パストラバーサル対策・CP932ファイル名文字化けの復元
+* CRSのWGS84統一（CRSが無いShapefileは座標値から経緯度データかどうかを判定）
 * Polygon / MultiPolygon検証
+* 洪水（国土数値情報A31a）・津波（沖縄県LEVEL1〜7）・高潮（沖縄県）の既知公式データ自動判定
 * 要支援者地点のハザード判定
 * 候補避難所地点のハザード判定
 * 要支援者－候補避難所間の直線交差判定
 * 複数ハザード種別の保持
 * UTF-8 BOM付き結果CSV出力
 * 座標欠損・不正行を削除せず結果へ保持
+
+ハザードデータの取得元・具体的な操作手順は [docs/hazard-data.md](./hazard-data.md) を参照。
 
 ---
 
