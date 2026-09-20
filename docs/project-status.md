@@ -83,7 +83,7 @@ API取得に失敗した場合はCSVアップロードへフォールバック�
 
 実行時には `ENABLE_HAZARD_CHECK` によって使用するか選択できるが、これは利用時の任意設定であり、開発上の優先度が低いことを意味しない。
 
-GeoJSONのPolygon / MultiPolygonを使用し、少なくとも以下を判定する。
+読み込んだGeoJSON / ShapefileをEPSG:4326のPolygon / MultiPolygonとして統合し、少なくとも以下を判定する。
 
 #### 要支援者地点
 
