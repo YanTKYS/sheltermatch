@@ -60,18 +60,34 @@
   たびにABR ZIPを再アップロードする必要はありません。「住所CSV変換・出力」セルだけを繰り返し
   再実行できます。
 
-## 7. 住所CSVとの関係
+## 7. 共通住民CSVとの関係
 
-住所データとABRマスタ（上記3ZIP）は別のものです。
+住所データ（共通住民CSV）とABRマスタ（上記3ZIP）は別のものです。
 
-`address_geocode.ipynb` へアップロードする**住所CSV**は、
+`address_geocode.ipynb` は、次の5列を持つ**共通住民CSV**を入力・出力とします（テンプレート:
+[templates/residents.csv](../templates/residents.csv)）。
 
-- `address` 列のみが必須です。
-- `resident_id` 等のその他の列は任意で、そのまま結果へ保持されます。
+```text
+resident_id,address,latitude,longitude,geocode_status
+```
 
-変換後は `latitude` / `longitude` / `geocode_status` 等の列が追加され、`○○_geocoded.csv` として
-出力されます。この出力CSVは、`sheltermatch.ipynb` の要支援者CSVとしてそのまま利用できます
-（sheltermatch本体は `latitude`/`longitude` を必須とし、その他の追加列はそのまま保持する仕様です）。
+- 初回投入時に値が必要なのは `resident_id` と `address` だけです。`latitude` / `longitude` /
+  `geocode_status` は空欄で構いません。
+- `resident_id` は住民を一意に識別するIDです。空欄・重複がある場合、`address_geocode.ipynb` は
+  どの行に問題があるかを示した上で処理を止めます（住所変換結果と避難所候補算出結果を紐づける
+  結合キーのため）。
+- 変換後も列構成は変わりません。`latitude` / `longitude` / `geocode_status` の3列が、変換のたびに
+  最新の結果で埋まる・上書きされるだけです。`normalized_address` 等のABR内部確認用の列は
+  Notebook上の確認表示にのみ使用し、出力CSVには含めません。
+
+列構成が変換前後で変わらないため、出力CSVは加工せずに次のどちらにも使えます。
+
+- 住所を修正して、同じCSVを再度 `address_geocode.ipynb` へ投入する（再変換。修正した行だけでなく
+  全行を再評価しても問題ありません。古い `latitude` / `longitude` / `geocode_status` は再変換の
+  たびに最新の結果へ置き換わります）
+- そのまま `sheltermatch.ipynb` の要支援者CSVとしてアップロードする（sheltermatch側は
+  `latitude` / `longitude` を必須とし、`geocode_status` を含むそれ以外の列はそのまま結果へ保持する
+  仕様です）
 
 ## 8. geocode_status
 
