@@ -17,3 +17,12 @@
 
 これらのファイル自体はこのリポジトリには含めていない。同じ確認を行う場合は、各データの公式配布元から
 別途取得すること。
+
+## ファイル
+
+* `residents_sample_enriched.csv`: 回帰確認用の架空要支援者CSV。共通住民CSVの5列
+  (`resident_id,address,latitude,longitude,geocode_status`) に、確認内容を書いた `note` 列を
+  追加したもの。`note` のような追加列は、`sheltermatch.ipynb` がそのまま結果CSVへ引き継ぐ。
+* `assigned_shelters.csv`: 上記CSVを実際にGoogle Colabで処理した結果の記録。共通住民CSVを5列へ
+  統一する前に取得したものなので、`geocode_status` 列は含まれていない(当時の入力には無かったため)。
+  再実行した場合は `geocode_status` 列が1つ増える。
