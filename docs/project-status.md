@@ -104,6 +104,13 @@ API取得に失敗した場合はCSVアップロードへフォールバック�
 
 読み込んだGeoJSON / ShapefileをEPSG:4326のPolygon / MultiPolygonとして統合し、少なくとも以下を判定する。
 
+有効なPolygon / MultiPolygonは一切変更せずそのまま使う。公式配布データに実際に含まれている
+`is_valid=False` のPolygon / MultiPolygon（自己交差等）は、`shapely.make_valid()` で直してから使う
+（直した結果がGeometryCollectionになる場合はPolygon / MultiPolygon成分だけを使い、区域として
+使える形にならなかったものは区域判定対象外とする）。空・欠損のジオメトリ、Polygon / MultiPolygon
+以外のジオメトリは、従来どおり区域判定対象外とする。直した行も元の `hazard_type` をそのまま
+引き継ぎ、種別・カテゴリを再解釈しない。
+
 #### 要支援者地点
 
 要支援者地点がハザード区域の内部または境界上にあるか。
@@ -212,6 +219,8 @@ JageocoderもABR Geocoderも、辞書・キャッシュ生成のために配布�
 * ZIP内パストラバーサル対策・CP932ファイル名文字化けの復元
 * CRSのWGS84統一(CRSが無いShapefileは座標値から経緯度データかどうかを判定)
 * Polygon / MultiPolygon検証(それ以外のgeometry typeは区域判定対象外として除外し、件数を集約表示)
+* 公式データに含まれる不正なPolygon / MultiPolygon(自己交差等)の `shapely.make_valid()` による修復
+  (有効なジオメトリは変更しない。GeometryCollectionはPolygon成分のみ採用。修復・除外の件数を集約表示)
 * 洪水(国土数値情報A31a)のファイル名自動判定とZIP内カテゴリ(計画規模/想定最大規模等)の保持
 * 土砂災害(国土数値情報A33)のファイル名自動判定と `A33_001`/`A33_002` による詳細分類の保持
 * 津波(沖縄県LEVEL1〜7)の `分類` 属性保持
@@ -257,6 +266,28 @@ A31aで実データにより確認済みの詳細カテゴリ:
 * 要支援者地点判定 / 候補避難所地点判定 / 要支援者-候補避難所間の直線交差判定
 
 BODIK避難所データとの組合せも含め、緯度・経度入り実データ相当CSVによる本体の一連の処理(要支援者読込→候補算出→ハザード判定→結果CSV出力)は完走を確認済み。
+
+### ジオメトリ品質の調査と対応(2026-09-21)
+
+公式ハザード11ZIP(津波LEVEL1〜7 / A33 / 高潮 / A31a 2種類)をGoogle Colabへ投入し、
+`experiments/hazard_geometry_audit.ipynb` でジオメトリの内訳を調査した結果は以下のとおり。
+
+| 項目 | 件数 |
+| --- | --- |
+| 調査対象ジオメトリ総数 | 182,424件 |
+| `is_valid=False` のため除外されていたもの | 1,354件 |
+| `make_valid()` でPolygon / MultiPolygonへ復元可能 | 1,354件(全件) |
+| GeometryCollectionからの復元 | 0件 |
+| 復元不能 | 0件 |
+| 復元された面積の合計 | 約175,085,405㎡ |
+
+復元前後の判定差は、要支援者地点0件・直線交差0件に対し、**候補避難所地点3件**。
+
+公式データ上の意味のある区域が除外され、実際の候補避難所判定にも影響していたため、本体で
+`is_valid=False` のPolygon / MultiPolygonのみを `make_valid()` で直してから使うようにした
+(詳細は [docs/hazard-data.md](./hazard-data.md) の「ジオメトリの扱い」を参照)。
+
+`experiments/hazard_geometry_audit.ipynb` は調査記録として残しており、本体へは統合していない。
 
 ---
 
