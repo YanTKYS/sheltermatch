@@ -1,3 +1,17 @@
 # Pythonが実行時に生成するバイトコード（Pythonのバージョンに依存する生成物のためコミットしない）
 __pycache__/
 *.py[cod]
+
+# Notebookをリポジトリ内で実行したときに生成される成果物・作業ファイル
+# （成果物はその都度作り直すものなのでコミットしない）
+/assigned_shelters.csv
+/*_geocoded.csv
+/sheltermatch_review/
+/sheltermatch_review.zip
+/sheltermatch_modules/
+/sheltermatch_review_runtime/
+.ipynb_checkpoints/
+
+# OS・エディタが作るファイル
+.DS_Store
+Thumbs.db

@@ -18,8 +18,21 @@
 これらのファイル自体はこのリポジトリには含めていない。同じ確認を行う場合は、各データの公式配布元から
 別途取得すること。
 
+## 自動テスト
+
+```bash
+python3 -m unittest discover -s test
+```
+
+`test_address_conversion.py` は、`address_geocode.ipynb` の住所変換ロジックをNotebookのセルから
+そのまま読み込んで実行する回帰テスト。ABRマスターは公式データをコミットできないため、実データと
+同じ列構成の架空データをテスト内で用意している。実データで起こり得る住所表記（全角／半角、漢数字の
+丁目、ハイフン類、空白、「字」「大字」の有無、`番地`/`番`/`号`/`の` の表記差）が同じ地番・同じ座標へ
+変換されることと、別の住所を同一視していないことを確認する。
+
 ## ファイル
 
+* `test_address_conversion.py`: 住所変換の回帰テスト(上記「自動テスト」を参照)。
 * `residents_sample_enriched.csv`: 回帰確認用の架空要支援者CSV。共通住民CSVの5列
   (`resident_id,address,latitude,longitude,geocode_status`) に、確認内容を書いた `note` 列を
   追加したもの。`note` のような追加列は、`sheltermatch.ipynb` がそのまま結果CSVへ引き継ぐ。
