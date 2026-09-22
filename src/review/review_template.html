@@ -80,9 +80,15 @@
     display: inline-block; white-space: nowrap; margin: 1px 6px 1px 0;
     padding: 0 5px; border-radius: 3px; border: 1px solid var(--border);
   }
+  /* 見落としてはいけない順に強く見せる: × 非対応 → △ 条件付き → ? 想定外の値 */
+  .support-item.none { background: #fdecec; border-color: #d18a8a; color: #9d2b1e; font-weight: 600; }
   .support-item.partial { background: var(--warn-bg); border-color: var(--warn-border); color: #8a4b08; }
-  .support-item.none { background: #f2f4f7; color: var(--muted); }
-  .support-item.unknown { background: #fdeeea; border-color: #d99a86; color: #a13a0c; }
+  .support-item.unknown { background: #fff; border-style: dashed; color: var(--muted); }
+  /* すべて非対応のときは要約自体を「非対応」として見せる */
+  .support-summary.none {
+    display: inline-block; padding: 0 5px; border-radius: 3px;
+    background: #fdecec; border: 1px solid #d18a8a; color: #9d2b1e;
+  }
   /* ハザード区分は災害種別ごとにまとめて、横へ流す */
   .hazard-group { display: inline-block; margin-right: 10px; }
   /* 順位・距離は折り返さず最小幅にし、避難所名とハザード欄へ幅を回す */
@@ -116,7 +122,7 @@
     <h1>避難所候補レビュー（sheltermatch）</h1>
     <div class="notice">
       避難所候補は<strong>距離による候補であり、最終的な割り当てではありません</strong>。
-      表示している線は<strong>直線であり、避難経路を示すものではありません</strong>（直線交差判定に使っている線です）。
+      表示している線は<strong>本人と避難所を結ぶ直線であり、避難経路を示すものではありません</strong>。
       最終的な避難先は職員が判断してください。
       <span id="generated-at"></span>
     </div>
@@ -628,7 +634,8 @@
       return cell;
     }
     if (!fullCount && others.every(function (item) { return item.mark === "×"; })) {
-      setText(summary, "全" + DISASTER_TYPES.length + "種が非対応");
+      summary.className = "support-summary none";
+      setText(summary, "× 全" + DISASTER_TYPES.length + "種が非対応");
       cell.appendChild(summary);
       return cell;
     }
