@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>避難所候補レビュー（sheltermatch）</title>
+<link rel="stylesheet" href="assets/css/leaflet.css">
+<style>
+  :root {
+    --border: #d7dbe0;
+    --muted: #5b6672;
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --accent: #1b4d89;
+    --warn-bg: #fff4e5;
+    --warn-border: #e0a561;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    color: #1d2329; background: var(--bg); font-size: 14px;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  header {
+    padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 16px; margin: 0 0 4px; }
+  .notice { font-size: 12px; color: var(--muted); line-height: 1.5; }
+  .notice strong { color: #8a4b08; }
+  #main { display: flex; flex: 1; min-height: 0; }
+  #sidebar {
+    width: 320px; flex: none; background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; min-height: 0; overflow-y: auto;
+  }
+  #sidebar .section { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  #sidebar .section.grow { flex: 1; min-height: 160px; overflow-y: auto; }
+  h2 { font-size: 13px; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
+  input[type="search"] { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; }
+  .count { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  ul.results { list-style: none; margin: 0; padding: 0; }
+  ul.results li {
+    padding: 6px 8px; border-radius: 4px; cursor: pointer; border: 1px solid transparent;
+    line-height: 1.4;
+  }
+  ul.results li:hover { background: #eef2f7; }
+  ul.results li.selected { background: #e3edf9; border-color: var(--accent); }
+  .rid { font-weight: 600; }
+  .addr { font-size: 12px; color: var(--muted); word-break: break-all; }
+  .badge {
+    display: inline-block; font-size: 11px; padding: 0 5px; border-radius: 8px;
+    border: 1px solid var(--warn-border); background: var(--warn-bg); color: #8a4b08; margin-left: 4px;
+  }
+  .nav { display: flex; gap: 6px; align-items: center; }
+  button {
+    padding: 5px 10px; border: 1px solid var(--border); background: #fff; border-radius: 4px;
+    cursor: pointer; font-size: 13px;
+  }
+  button:hover:enabled { background: #eef2f7; }
+  button:disabled { opacity: .45; cursor: default; }
+  #content { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  #map { flex: 1; min-height: 240px; background: #f0f3f6; }
+  .map-note { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .map-note.warn { color: #8a4b08; }
+  #map-fallback { padding: 16px; color: var(--muted); display: none; }
+  #map-attribution {
+    font-size: 11px; color: var(--muted); background: var(--panel);
+    padding: 3px 10px; border-top: 1px solid var(--border);
+  }
+  #detail { border-top: 1px solid var(--border); background: var(--panel); padding: 10px 12px; max-height: 42%; overflow-y: auto; }
+  #selected-summary { margin-bottom: 8px; line-height: 1.6; }
+  #selected-summary .title { font-size: 15px; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border: 1px solid var(--border); padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #eef1f5; font-weight: 600; white-space: nowrap; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: #f2f6fb; }
+  tbody tr.active { background: #e3edf9; }
+  .rank-chip {
+    display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center;
+    border-radius: 50%; color: #fff; font-weight: 700; font-size: 12px;
+  }
+  .layers { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .layers label { display: flex; align-items: center; gap: 5px; font-size: 13px; }
+  .swatch { width: 12px; height: 12px; border-radius: 2px; display: inline-block; border: 1px solid rgba(0,0,0,.25); }
+  .empty { color: var(--muted); padding: 8px 0; }
+  .hazard-yes { color: #a13a0c; font-weight: 600; }
+  .hazard-no { color: var(--muted); }
+  .marker-pin {
+    width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.4); color: #fff; font-weight: 700; font-size: 12px;
+    line-height: 18px; text-align: center;
+  }
+  #overview-map {
+    position: relative; width: 100%; border: 1px solid var(--border); border-radius: 4px;
+    overflow: hidden; background: #eef1f5;
+  }
+  #overview-map img { display: block; width: 100%; height: auto; }
+  #overview-detail-rect {
+    position: absolute; border: 2px solid #c62828; background: rgba(198, 40, 40, .12);
+    pointer-events: none;
+  }
+  #overview-resident-dot {
+    position: absolute; width: 9px; height: 9px; margin-left: -5px; margin-top: -5px;
+    border-radius: 50%; background: #14213d; border: 1px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.5); pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>避難所候補レビュー（sheltermatch）</h1>
+    <div class="notice">
+      避難所候補は<strong>距離による候補であり、最終的な割り当てではありません</strong>。
+      表示している線は<strong>直線であり、避難経路を示すものではありません</strong>（直線交差判定に使っている線です）。
+      最終的な避難先は職員が判断してください。
+      <span id="generated-at"></span>
+    </div>
+  </header>
+  <div id="main">
+    <div id="sidebar">
+      <div class="section">
+        <h2>要支援者を検索</h2>
+        <input type="search" id="search" placeholder="resident_id または 住所で絞り込み" autocomplete="off">
+        <div class="count" id="count"></div>
+      </div>
+      <div class="section grow">
+        <ul class="results" id="results"></ul>
+        <div class="count" id="more-note"></div>
+      </div>
+      <div class="section">
+        <div class="nav">
+          <button id="prev" type="button">← 前へ</button>
+          <button id="next" type="button">次へ →</button>
+          <span class="count" id="position"></span>
+        </div>
+      </div>
+      <div class="section">
+        <h2>地図の表示</h2>
+        <div class="layers">
+          <label>
+            <input type="checkbox" id="basemap-toggle" checked>
+            <span>背景地図</span>
+          </label>
+        </div>
+        <div class="map-note" id="basemap-note"></div>
+        <div class="map-note" id="view-bounds"></div>
+      </div>
+      <div class="section" id="layer-section">
+        <h2>ハザード区域の表示</h2>
+        <div class="layers" id="layers"></div>
+        <div class="nav" style="margin-top:8px">
+          <button id="layers-all" type="button">すべて表示</button>
+          <button id="layers-none" type="button">すべて非表示</button>
+        </div>
+        <div class="count">要支援者を選ぶと、その人に関係する種別を自動で表示します。</div>
+      </div>
+      <div class="section" id="overview-section">
+        <h2>沖縄本島内の位置</h2>
+        <div id="overview-map">
+          <img id="overview-img" alt="沖縄本島概要図">
+          <div id="overview-detail-rect"></div>
+          <div id="overview-resident-dot"></div>
+        </div>
+        <div class="count">赤い枠: 詳細図（メイン地図）の範囲 ／ 点: 選択中の要支援者</div>
+      </div>
+    </div>
+    <div id="content">
+      <div id="map"></div>
+      <div id="map-fallback"></div>
+      <div id="map-attribution"></div>
+      <div id="detail">
+        <div id="selected-summary"></div>
+        <div id="candidates"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="review-data">__REVIEW_DATA_JSON__</script>
+<script src="assets/js/leaflet.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var DATA = JSON.parse(document.getElementById("review-data").textContent);
+  var RESIDENTS = DATA.residents || [];
+  var HAZARD_LAYERS = DATA.hazard_layers || [];
+  var BASEMAP = DATA.basemap || {};
+  var BASEMAP_ATTRIBUTION = DATA.basemap_attribution || "";
+  var RESULT_LIMIT = 50;
+  var RANK_COLORS = ["#c62828", "#ef6c00", "#b58900"];
+  var RESIDENT_COLOR = "#14213d";
+
+  var map = null;
+  var featureLayer = null;
+  var graticuleLayer = null;
+  var basemapLayer = null;
+  var overlays = {};
+  var filtered = [];
+  var selectedIndex = -1;
+  var activeRank = null;
+
+  function el(id) { return document.getElementById(id); }
+
+  function setText(node, value) { node.textContent = value == null ? "" : String(value); }
+
+  function createRow(tag, className) {
+    var node = document.createElement(tag);
+    if (className) { node.className = className; }
+    return node;
+  }
+
+  // Leafletのツールチップは、文字列を渡すとHTMLとして解釈される。避難所名のような
+  // 利用者データがHTMLとして扱われないよう、必ずDOM要素にして渡す。
+  function textTooltip(text) {
+    var node = document.createElement("span");
+    node.textContent = text;
+    return node;
+  }
+
+  // ---- 地図の初期化 ----
+  // Leaflet本体・背景地図PNG・ハザードPNGはいずれもこの成果物へ同梱しているため、
+  // 外部通信なしで地図・背景地図・ハザード区域を表示できる（閉域環境での利用を想定）。
+  //
+  // 表示順は「背景地図 → ハザードPNG → 直線 → 要支援者・候補避難所」で固定したいため、
+  // レイヤーの追加・削除順に依存しないよう、専用のpane（重なり順を決める階層）を
+  // 用意してzIndexで順序を固定する（basemapPane=200 < hazardPane=300
+  // < 直線・線を置く既定のoverlayPane=400 < マーカーの既定のmarkerPane=600）。
+  function initMap() {
+    if (typeof L === "undefined") {
+      el("map").style.display = "none";
+      var fallback = el("map-fallback");
+      fallback.style.display = "block";
+      setText(fallback,
+        "地図ライブラリ（Leaflet）を読み込めませんでした。review.html と同じ場所の " +
+        "assets フォルダごと展開されているか確認してください。" +
+        "検索・候補一覧はこのまま利用できます。");
+      return;
+    }
+    map = L.map("map").setView([26.125, 127.68], 13);
+    map.createPane("basemapPane").style.zIndex = 200;
+    map.createPane("hazardPane").style.zIndex = 300;
+    featureLayer = L.layerGroup().addTo(map);
+    graticuleLayer = L.layerGroup().addTo(map);
+    initBasemap();
+    buildOverlays();
+    map.on("moveend zoomend", drawGraticule);
+    drawGraticule();
+    renderAttribution();
+  }
+
+  // ---- 背景地図（同梱のオフラインPNG。既定でON、外部通信なし） ----
+  function initBasemap() {
+    if (!map || !BASEMAP.detail) {
+      el("basemap-toggle").checked = false;
+      el("basemap-toggle").disabled = true;
+      setText(el("basemap-note"), "背景地図の画像データがありません。");
+      return;
+    }
+    basemapLayer = L.imageOverlay(BASEMAP.detail.image, BASEMAP.detail.bounds, {
+      pane: "basemapPane"
+    });
+    basemapLayer.once("add", function () {
+      var imageElement = basemapLayer.getElement ? basemapLayer.getElement() : null;
+      if (imageElement) {
+        imageElement.addEventListener("error", function () {
+          var note = el("basemap-note");
+          note.className = "map-note warn";
+          setText(note,
+            "背景地図画像を読み込めませんでした。review.html と同じ場所に " +
+            "assets フォルダごと展開されているか確認してください。");
+        });
+      }
+    });
+    setBasemapEnabled(el("basemap-toggle").checked);
+  }
+
+  function setBasemapEnabled(enabled) {
+    if (!map || !basemapLayer) { return; }
+    if (enabled) {
+      if (!map.hasLayer(basemapLayer)) { basemapLayer.addTo(map); }
+    } else if (map.hasLayer(basemapLayer)) {
+      map.removeLayer(basemapLayer);
+    }
+  }
+
+  // ---- 出典表示（国土地理院。地理院タイルを画像化して同梱しているための表記） ----
+  function renderAttribution() {
+    var node = el("map-attribution");
+    if (BASEMAP.detail && BASEMAP_ATTRIBUTION) {
+      setText(node, "背景地図: " + BASEMAP_ATTRIBUTION + "（地理院タイルをオフライン用に画像化して同梱）");
+    } else {
+      node.style.display = "none";
+    }
+  }
+
+  // ---- 経緯度グリッド（位置の目安。背景地図に重ねて表示する） ----
+  var GRATICULE_STEPS = [1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001];
+
+  function graticuleStep(span) {
+    for (var i = 0; i < GRATICULE_STEPS.length; i += 1) {
+      if (span / GRATICULE_STEPS[i] >= 4) { return GRATICULE_STEPS[i]; }
+    }
+    return GRATICULE_STEPS[GRATICULE_STEPS.length - 1];
+  }
+
+  function drawGraticule() {
+    if (!map || !graticuleLayer) { return; }
+    graticuleLayer.clearLayers();
+    var bounds = map.getBounds();
+    var south = bounds.getSouth(), north = bounds.getNorth();
+    var west = bounds.getWest(), east = bounds.getEast();
+    var step = graticuleStep(Math.max(north - south, east - west));
+    // 候補の直線と見分けられるよう、グリッド線には専用のクラス名を付ける
+    var style = {
+      className: "graticule-line",
+      color: "#9aa5b1", weight: 1, opacity: 0.5, interactive: false
+    };
+
+    for (var lat = Math.ceil(south / step) * step; lat <= north; lat += step) {
+      L.polyline([[lat, west], [lat, east]], style).addTo(graticuleLayer);
+    }
+    for (var lon = Math.ceil(west / step) * step; lon <= east; lon += step) {
+      L.polyline([[south, lon], [north, lon]], style).addTo(graticuleLayer);
+    }
+
+    setText(el("view-bounds"),
+      "表示範囲 緯度 " + south.toFixed(4) + "〜" + north.toFixed(4)
+      + " / 経度 " + west.toFixed(4) + "〜" + east.toFixed(4)
+      + "（グリッド間隔 " + step + "度）");
+  }
+
+  function buildOverlays() {
+    HAZARD_LAYERS.forEach(function (layer) {
+      try {
+        overlays[layer.key] = L.imageOverlay(layer.image, layer.bounds, {
+          opacity: 0.45, pane: "hazardPane"
+        });
+      } catch (error) {
+        overlays[layer.key] = null;
+      }
+    });
+  }
+
+  // ---- ハザードレイヤ操作 ----
+  function renderLayerControls() {
+    var container = el("layers");
+    container.textContent = "";
+    if (!HAZARD_LAYERS.length) {
+      el("layer-section").style.display = "none";
+      return;
+    }
+    HAZARD_LAYERS.forEach(function (layer) {
+      var label = createRow("label");
+      var input = document.createElement("input");
+      input.type = "checkbox";
+      input.dataset.key = layer.key;
+      input.addEventListener("change", function () {
+        setLayerEnabled(layer.key, input.checked);
+      });
+      var swatch = createRow("span", "swatch");
+      swatch.style.background = layer.color;
+      var text = document.createElement("span");
+      setText(text, layer.label);
+      label.appendChild(input);
+      label.appendChild(swatch);
+      label.appendChild(text);
+      container.appendChild(label);
+    });
+  }
+
+  function setLayerEnabled(key, enabled) {
+    var checkbox = document.querySelector('#layers input[data-key="' + key + '"]');
+    if (checkbox) { checkbox.checked = enabled; }
+    var overlay = overlays[key];
+    if (!map || !overlay) { return; }
+    if (enabled) {
+      if (!map.hasLayer(overlay)) { overlay.addTo(map); }
+    } else if (map.hasLayer(overlay)) {
+      map.removeLayer(overlay);
+    }
+  }
+
+  function setAllLayers(enabled) {
+    HAZARD_LAYERS.forEach(function (layer) { setLayerEnabled(layer.key, enabled); });
+  }
+
+  function applyRelevantLayers(resident) {
+    var relevant = {};
+    (resident.hazard_groups || []).forEach(function (key) { relevant[key] = true; });
+    HAZARD_LAYERS.forEach(function (layer) {
+      setLayerEnabled(layer.key, Boolean(relevant[layer.key]));
+    });
+  }
+
+  // ---- 沖縄本島概要図（背景PNGの上へ、詳細図の範囲・選択中の要支援者位置をCSSで重ねる） ----
+  // 地理院タイル・背景PNGはWeb Mercator（緯度方向は非線形）で作っているため、単純な
+  // 緯度の線形補間で点を置くと、実際の画像上の位置と少しずれる。画像と同じ投影になる
+  // よう、緯度はメルカトルのY座標へ変換してから画像内の位置（%）を計算する。
+  function mercatorY(latDeg) {
+    var rad = latDeg * Math.PI / 180;
+    return Math.log(Math.tan(Math.PI / 4 + rad / 2));
+  }
+
+  function fractionX(lon, minLon, maxLon) {
+    return (lon - minLon) / (maxLon - minLon);
+  }
+
+  function fractionY(lat, minLat, maxLat) {
+    var y = mercatorY(lat), yMin = mercatorY(minLat), yMax = mercatorY(maxLat);
+    return (yMax - y) / (yMax - yMin);
+  }
+
+  function initOverviewMap() {
+    if (!BASEMAP.overview) {
+      el("overview-section").style.display = "none";
+      return;
+    }
+    el("overview-img").src = BASEMAP.overview.image;
+    if (BASEMAP.detail) {
+      positionOverviewRect(BASEMAP.detail.bounds, BASEMAP.overview.bounds);
+    } else {
+      el("overview-detail-rect").style.display = "none";
+    }
+  }
+
+  function positionOverviewRect(detailBounds, overviewBounds) {
+    var minLat = overviewBounds[0][0], minLon = overviewBounds[0][1];
+    var maxLat = overviewBounds[1][0], maxLon = overviewBounds[1][1];
+    var dMinLat = detailBounds[0][0], dMinLon = detailBounds[0][1];
+    var dMaxLat = detailBounds[1][0], dMaxLon = detailBounds[1][1];
+    var rect = el("overview-detail-rect");
+    var left = fractionX(dMinLon, minLon, maxLon) * 100;
+    var right = fractionX(dMaxLon, minLon, maxLon) * 100;
+    var top = fractionY(dMaxLat, minLat, maxLat) * 100;
+    var bottom = fractionY(dMinLat, minLat, maxLat) * 100;
+    rect.style.left = left + "%";
+    rect.style.width = Math.max(0, right - left) + "%";
+    rect.style.top = top + "%";
+    rect.style.height = Math.max(0, bottom - top) + "%";
+  }
+
+  function updateOverviewResident(resident) {
+    if (!BASEMAP.overview) { return; }
+    var dot = el("overview-resident-dot");
+    if (!resident || !resident.has_coordinates) {
+      dot.style.display = "none";
+      return;
+    }
+    var minLat = BASEMAP.overview.bounds[0][0], minLon = BASEMAP.overview.bounds[0][1];
+    var maxLat = BASEMAP.overview.bounds[1][0], maxLon = BASEMAP.overview.bounds[1][1];
+    dot.style.display = "block";
+    dot.style.left = (fractionX(resident.longitude, minLon, maxLon) * 100) + "%";
+    dot.style.top = (fractionY(resident.latitude, minLat, maxLat) * 100) + "%";
+  }
+
+  // ---- 検索・一覧 ----
+  function normalize(value) { return (value == null ? "" : String(value)).toLowerCase(); }
+
+  function applyFilter() {
+    var query = normalize(el("search").value).trim();
+    filtered = [];
+    for (var i = 0; i < RESIDENTS.length; i += 1) {
+      var resident = RESIDENTS[i];
+      if (!query
+        || normalize(resident.resident_id).indexOf(query) >= 0
+        || normalize(resident.address).indexOf(query) >= 0) {
+        filtered.push(i);
+      }
+    }
+    if (filtered.indexOf(selectedIndex) < 0) {
+      select(filtered.length ? filtered[0] : -1);
+    } else {
+      renderResults();
+      updatePosition();
+    }
+  }
+
+  // 一覧は一度にRESULT_LIMIT件までしか描かない（何千件でも検索のたびに重くならないようにするため）。
+  // 描く範囲は選択中の要支援者を含むページにする。ここを常に先頭からにすると、「次へ」で
+  // RESULT_LIMIT件目より後ろへ進んだときに、選択中の行が一覧から消えてしまう。
+  function visibleRange() {
+    var position = filtered.indexOf(selectedIndex);
+    var start = position < 0 ? 0 : Math.floor(position / RESULT_LIMIT) * RESULT_LIMIT;
+    return { start: start, end: Math.min(start + RESULT_LIMIT, filtered.length) };
+  }
+
+  function renderResults() {
+    var list = el("results");
+    list.textContent = "";
+    var range = visibleRange();
+    for (var i = range.start; i < range.end; i += 1) {
+      list.appendChild(createResultItem(filtered[i]));
+    }
+    setText(el("count"), "該当 " + filtered.length + "件 / 全 " + RESIDENTS.length + "件");
+    setText(el("more-note"),
+      filtered.length > RESULT_LIMIT
+        ? "該当" + filtered.length + "件のうち " + (range.start + 1) + "〜" + range.end
+          + "件目を表示しています（検索で絞り込めます）。"
+        : "");
+    var selected = list.querySelector("li.selected");
+    if (selected && selected.scrollIntoView) { selected.scrollIntoView({ block: "nearest" }); }
+  }
+
+  function createResultItem(index) {
+    var resident = RESIDENTS[index];
+    var item = createRow("li", index === selectedIndex ? "selected" : "");
+    item.dataset.index = String(index);
+    var rid = createRow("div", "rid");
+    setText(rid, resident.resident_id);
+    if (!resident.has_coordinates) {
+      var badge = createRow("span", "badge");
+      setText(badge, "座標なし");
+      rid.appendChild(badge);
+    }
+    var addr = createRow("div", "addr");
+    setText(addr, resident.address);
+    item.appendChild(rid);
+    item.appendChild(addr);
+    item.addEventListener("click", function () { select(index); });
+    return item;
+  }
+
+  function updatePosition() {
+    var position = filtered.indexOf(selectedIndex);
+    setText(el("position"), position >= 0 ? (position + 1) + " / " + filtered.length : "");
+    el("prev").disabled = position <= 0;
+    el("next").disabled = position < 0 || position >= filtered.length - 1;
+  }
+
+  function step(offset) {
+    var position = filtered.indexOf(selectedIndex);
+    if (position < 0) { return; }
+    var next = position + offset;
+    if (next < 0 || next >= filtered.length) { return; }
+    select(filtered[next]);
+  }
+
+  // ---- 選択 ----
+  function select(index) {
+    selectedIndex = index;
+    activeRank = null;
+    renderResults();
+    updatePosition();
+    renderSelected();
+  }
+
+  function renderSelected() {
+    var summary = el("selected-summary");
+    var candidates = el("candidates");
+    summary.textContent = "";
+    candidates.textContent = "";
+    if (featureLayer) { featureLayer.clearLayers(); }
+
+    if (selectedIndex < 0) {
+      setText(summary, "要支援者を選択してください。");
+      updateOverviewResident(null);
+      return;
+    }
+
+    var resident = RESIDENTS[selectedIndex];
+    applyRelevantLayers(resident);
+    updateOverviewResident(resident);
+
+    var title = createRow("div", "title");
+    setText(title, resident.resident_id);
+    var addr = createRow("div", "addr");
+    setText(addr, resident.address);
+    summary.appendChild(title);
+    summary.appendChild(addr);
+
+    var status = createRow("div");
+    setText(status, "match_status: " + resident.match_status);
+    summary.appendChild(status);
+
+    if (resident.resident_in_hazard !== null && resident.resident_in_hazard !== undefined) {
+      var hazard = createRow("div", resident.resident_in_hazard ? "hazard-yes" : "hazard-no");
+      setText(hazard, resident.resident_in_hazard
+        ? "要支援者地点のハザード: " + (resident.resident_hazard_types.join(" / ") || "該当あり")
+        : "要支援者地点のハザード: 区域外");
+      summary.appendChild(hazard);
+    }
+
+    if (!resident.has_coordinates) {
+      var noCoord = createRow("div", "empty");
+      setText(noCoord, "地図表示できる座標がありません（" + resident.match_status + "）。候補も算出されていません。");
+      summary.appendChild(noCoord);
+    }
+
+    renderCandidateTable(resident);
+    drawResident(resident);
+  }
+
+  function hazardCell(isHazard, types) {
+    var cell = document.createElement("td");
+    if (isHazard === null || isHazard === undefined) {
+      cell.className = "hazard-no";
+      setText(cell, "判定なし");
+      return cell;
+    }
+    cell.className = isHazard ? "hazard-yes" : "hazard-no";
+    setText(cell, isHazard ? (types.join(" / ") || "該当あり") : "なし");
+    return cell;
+  }
+
+  function renderCandidateTable(resident) {
+    var container = el("candidates");
+    if (!resident.candidates.length) {
+      var empty = createRow("div", "empty");
+      setText(empty, "避難所候補はありません。");
+      container.appendChild(empty);
+      return;
+    }
+
+    var table = document.createElement("table");
+    var thead = document.createElement("thead");
+    var headRow = document.createElement("tr");
+    ["順位", "避難所名", "直線距離", "災害種別対応", "避難所地点のハザード", "直線交差ハザード"]
+      .forEach(function (name) {
+        var th = document.createElement("th");
+        setText(th, name);
+        headRow.appendChild(th);
+      });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement("tbody");
+    resident.candidates.forEach(function (candidate) {
+      var row = document.createElement("tr");
+      row.dataset.rank = String(candidate.rank);
+      if (activeRank === candidate.rank) { row.className = "active"; }
+
+      var rankCell = document.createElement("td");
+      var chip = createRow("span", "rank-chip");
+      chip.style.background = RANK_COLORS[candidate.rank - 1] || "#555";
+      setText(chip, candidate.rank);
+      rankCell.appendChild(chip);
+      var rankLabel = document.createElement("span");
+      setText(rankLabel, " 候補" + candidate.rank);
+      rankCell.appendChild(rankLabel);
+      row.appendChild(rankCell);
+
+      var nameCell = document.createElement("td");
+      setText(nameCell, candidate.name);
+      row.appendChild(nameCell);
+
+      var distanceCell = document.createElement("td");
+      setText(distanceCell, candidate.distance_m == null ? "" : candidate.distance_m + " m");
+      row.appendChild(distanceCell);
+
+      var supportCell = document.createElement("td");
+      setText(supportCell, candidate.disaster_support || "");
+      row.appendChild(supportCell);
+
+      row.appendChild(hazardCell(candidate.shelter_in_hazard, candidate.shelter_hazard_types));
+      row.appendChild(hazardCell(candidate.straight_line_intersects_hazard, candidate.straight_line_hazard_types));
+
+      row.addEventListener("click", function () {
+        activeRank = activeRank === candidate.rank ? null : candidate.rank;
+        el("candidates").textContent = "";
+        renderCandidateTable(resident);
+        drawResident(resident);
+      });
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+
+    var note = createRow("div", "count");
+    setText(note, "距離は直線距離（geodesic）です。道路距離ではありません。順位はハザード情報では変わりません。");
+    container.appendChild(note);
+  }
+
+  // ---- 地図描画（選択した1人だけ） ----
+  function drawResident(resident) {
+    if (!map || !featureLayer) { return; }
+    featureLayer.clearLayers();
+    if (!resident.has_coordinates) { return; }
+
+    var residentLatLng = [resident.latitude, resident.longitude];
+    var points = [residentLatLng];
+
+    resident.candidates.forEach(function (candidate) {
+      var candidateLatLng = [candidate.latitude, candidate.longitude];
+      points.push(candidateLatLng);
+      var color = RANK_COLORS[candidate.rank - 1] || "#555";
+      var emphasised = activeRank === candidate.rank;
+
+      L.polyline([residentLatLng, candidateLatLng], {
+        color: color,
+        weight: emphasised ? 5 : 3,
+        opacity: activeRank && !emphasised ? 0.35 : 0.9,
+        dashArray: "6 5"
+      }).addTo(featureLayer).bindTooltip(
+        textTooltip("候補" + candidate.rank + "への直線（避難経路ではありません）"));
+
+      L.marker(candidateLatLng, {
+        icon: L.divIcon({
+          className: "",
+          // ここで組み立てるのは候補番号（このNotebookが振る整数）と配色だけで、
+          // 利用者データは入れない
+          html: '<div class="marker-pin" style="background:' + color + ';">' + candidate.rank + '</div>',
+          iconSize: [22, 22],
+          iconAnchor: [11, 11]
+        }),
+        opacity: activeRank && !emphasised ? 0.5 : 1
+      }).addTo(featureLayer).bindTooltip(
+        textTooltip("候補" + candidate.rank + ": " + candidate.name));
+    });
+
+    L.circleMarker(residentLatLng, {
+      radius: 9, color: "#fff", weight: 2, fillColor: RESIDENT_COLOR, fillOpacity: 1
+    }).addTo(featureLayer).bindTooltip(textTooltip("要支援者地点"));
+
+    try {
+      // 候補詳細の高さが変わると地図の表示サイズも変わるため、
+      // 収める範囲を計算する前にLeafletへ現在の大きさを取り直させる
+      map.invalidateSize({ animate: false });
+      map.fitBounds(L.latLngBounds(points).pad(0.25));
+    } catch (error) {
+      map.setView(residentLatLng, 15);
+    }
+  }
+
+  // ---- 起動 ----
+  setText(el("generated-at"), DATA.generated_at ? "（作成: " + DATA.generated_at + "）" : "");
+  initMap();
+  initOverviewMap();
+  renderLayerControls();
+  el("search").addEventListener("input", applyFilter);
+  el("prev").addEventListener("click", function () { step(-1); });
+  el("next").addEventListener("click", function () { step(1); });
+  el("basemap-toggle").addEventListener("change", function (event) {
+    setBasemapEnabled(event.target.checked);
+  });
+  el("layers-all").addEventListener("click", function () { setAllLayers(true); });
+  el("layers-none").addEventListener("click", function () { setAllLayers(false); });
+  applyFilter();
+})();
+</script>
+</body>
+</html>
