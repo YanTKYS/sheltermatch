@@ -177,3 +177,4 @@ Notebook 全体の通し確認は Google Colab 上で行います。過去の確
 | [docs/hazard-data.md](docs/hazard-data.md) | ハザードデータの取得元と投入手順 |
 | [docs/operation-check.md](docs/operation-check.md) | 操作導線・エラー処理の確認記録 |
 | [docs/performance-test.md](docs/performance-test.md) | 処理時間の確認記録 |
+| [CHANGELOG.md](CHANGELOG.md) | 変更履歴 |
