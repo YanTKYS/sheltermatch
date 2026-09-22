@@ -195,6 +195,10 @@ JageocoderもABR Geocoderも、辞書・キャッシュ生成のために配布�
 
 実機確認では、`experiments/address_conversion_test_input.csv`（8件）で6件matched・1件town_not_found・1件blank_addressとなり、通常表記・都道府県省略・全角数字・「番地」表記省略のいずれも同じ地番・座標へ一致することを確認済み。
 
+住所表記の揺れ（全角／半角、漢数字の丁目、ハイフン類、空白、「字」「大字」の有無、`番地`/`番`/`号`/`の`
+の表記差）への対応は、`test/test_address_conversion.py` で回帰テストしている
+（`python3 -m unittest discover -s test`）。別の住所を同一視していないことも同じテストで確認する。
+
 データ取得元・利用手順・`geocode_status`の詳細は [docs/address-data.md](./address-data.md) を参照。
 
 ### 今後
