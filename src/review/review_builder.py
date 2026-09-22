@@ -14,8 +14,7 @@ sheltermatch.ipynb はGoogle Colabでの実行時に、このファイルと rev
 出力するZIPの中身:
     sheltermatch_review/review.html                         … 全要支援者のデータを埋め込んだ1ファイル
     sheltermatch_review/assets/hazard_*.png                 … ハザード区域の表示用画像（大分類ごとに1枚）
-    sheltermatch_review/assets/basemap_itoman.png           … 表示範囲の背景地図（詳細）
-    sheltermatch_review/assets/basemap_okinawa_mainland.png … 沖縄本島概要図の背景地図
+    sheltermatch_review/assets/basemap_itoman.png           … 表示範囲の背景地図
     sheltermatch_review/assets/js, css, images              … Leaflet本体（地図ライブラリ）
     sheltermatch_review/assets/leaflet-LICENSE.txt          … Leafletの公式LICENSE本文
 """
@@ -86,16 +85,10 @@ GSI_TILE_URL_TEMPLATE = "https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.p
 GSI_ATTRIBUTION_TEXT = "国土地理院"
 GSI_TILE_SIZE = 256
 
-# 沖縄本島全体が収まる固定範囲（min_lat, min_lon, max_lat, max_lon）。厳密な行政区域の抽出や
-# 本島形状のマスクは行わず、本島内の大まかな位置関係が分かれば十分という前提の概略値。
-OKINAWA_MAINLAND_BOUNDS = (25.85, 127.50, 27.05, 128.35)
-
 # 背景地図PNGの生成設定。zoom_candidatesは解像度が高い順に並べ、先頭から試して
 # タイル数がmax_tiles以下になった最初のズームを使う（安全策）。候補のどのズームでも
-# 収まらない場合は、黙って大量取得せず処理を中止する。
-# 初版のレビュー用途（沖縄本島概要＋糸満市詳細）に対して十分余裕のある値として、
-# 詳細背景は最大200枚（zoom15で概ね市街地1つ分の範囲を想定）、概要背景は最大120枚
-# （zoom10で本島全体）を上限とする。
+# 収まらない場合は、黙って大量取得せず処理を中止する。上限200枚は、zoom15で概ね
+# 市街地1つ分の範囲を想定した値。
 BASEMAP_SPECS = [
     {
         "key": "detail",
@@ -103,13 +96,6 @@ BASEMAP_SPECS = [
         "label": "詳細背景（表示範囲）",
         "zoom_candidates": [15, 14, 13, 12, 11],
         "max_tiles": 200,
-    },
-    {
-        "key": "overview",
-        "filename": "basemap_okinawa_mainland.png",
-        "label": "沖縄本島概要背景",
-        "zoom_candidates": [10, 9, 8, 7],
-        "max_tiles": 120,
     },
 ]
 
@@ -303,7 +289,7 @@ def render_basemap_png(bounds, spec, assets_dir, tile_cache):
 
 
 def render_offline_basemaps(display_bounds, assets_dir):
-    """糸満市周辺の詳細背景（表示範囲）と、沖縄本島の概要背景の2枚のPNGを生成する。
+    """表示範囲の背景地図PNGを生成する。
 
     背景地図はレビュー補助情報だが、中途半端な（一部だけ生成できた）背景地図を含む
     レビューZIPは作らない方針のため、1件でも取得・生成に失敗した場合は例外を送出して
@@ -314,14 +300,13 @@ def render_offline_basemaps(display_bounds, assets_dir):
 
     print("背景地図（地理院タイル）を取得しています（インターネット接続が必要です）…")
     for spec in BASEMAP_SPECS:
-        bounds = display_bounds if spec["key"] == "detail" else OKINAWA_MAINLAND_BOUNDS
-        basemaps[spec["key"]] = render_basemap_png(bounds, spec, assets_dir, tile_cache)
+        basemaps[spec["key"]] = render_basemap_png(display_bounds, spec, assets_dir, tile_cache)
 
     notice_path = assets_dir / "gsi-basemap-NOTICE.txt"
     notice_path.write_text(
         "背景地図について\n"
         "\n"
-        "このフォルダの basemap_itoman.png / basemap_okinawa_mainland.png は、"
+        "このフォルダの basemap_itoman.png は、"
         "国土地理院の地理院タイル（淡色地図）を、このレビュー成果物を作成した時点で"
         "取得し、画像として保存したものです。\n"
         "\n"
@@ -421,6 +406,20 @@ def render_hazard_images(hazard_area, display_bounds, assets_dir):
 # 埋め込みデータの組み立てと結果CSVとの照合
 # =============================================================================
 
+# 避難所データの災害種別列の接頭辞（sheltermatch.ipynbの避難所取得セルと同じ規則）。
+DISASTER_TYPE_COLUMN_PREFIX = "災害種別_"
+
+
+def disaster_type_names(shelters_df):
+    """避難所データの「災害種別_」列から、災害種別名の一覧を取り出す。
+
+    避難所ごとの対応区分（_disaster_support）には対応している種別しか入らないため、
+    画面で「非対応」を区別するには、非対応も含めた全種別の一覧が必要になる。"""
+    prefix_length = len(DISASTER_TYPE_COLUMN_PREFIX)
+    return [column[prefix_length:] for column in shelters_df.columns
+            if column.startswith(DISASTER_TYPE_COLUMN_PREFIX)]
+
+
 def json_value(value):
     """NaN等をそのままJSONにできないため、Pythonの標準的な値へ整える。"""
     if value is None:
@@ -438,7 +437,7 @@ def json_value(value):
     return str(value)
 
 
-def build_review_data(final_df, review_rows, hazard_layers, basemaps, top_n):
+def build_review_data(final_df, review_rows, hazard_layers, basemaps, top_n, disaster_types):
     """結果CSVと同じ実行結果から、レビューHTMLへ埋め込むデータを組み立てる。
     候補の順位・距離は候補算出ループで得たものをそのまま使い、ここで計算し直さない
     （CSVとHTMLで候補順位がずれないようにするため）。"""
@@ -489,6 +488,8 @@ def build_review_data(final_df, review_rows, hazard_layers, basemaps, top_n):
     return {
         "generated_at": time.strftime("%Y-%m-%d %H:%M"),
         "top_n": top_n,
+        # 避難所データにある災害種別の全一覧。画面で対応／条件付き／非対応を区別するために使う。
+        "disaster_types": disaster_types,
         "hazard_layers": hazard_layers,
         "basemap": basemaps,
         "basemap_attribution": GSI_ATTRIBUTION_TEXT,
@@ -593,7 +594,7 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
     final_df      結果CSV（assigned_shelters.csv）と同じ内容のDataFrame
     review_rows   候補算出ループで作った要支援者ごとの表示用データ（候補の順位・距離を含む）
     hazard_area   ハザード区域のGeoDataFrame（ハザード判定を行っていない場合はNone）
-    shelters_df   距離計算に使った有効な避難所のDataFrame（表示範囲の算出に使う）
+    shelters_df   距離計算に使った有効な避難所のDataFrame（表示範囲と災害種別一覧の算出に使う）
     top_n         候補の件数（TOP_N）
     output_dir    ZIPと作業用フォルダの出力先
     template_path review_template.html のパス
@@ -621,7 +622,8 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
 
     basemaps = render_offline_basemaps(display_bounds, assets_dir)
 
-    review_data = build_review_data(final_df, review_rows, hazard_layers, basemaps, top_n)
+    review_data = build_review_data(final_df, review_rows, hazard_layers, basemaps, top_n,
+                                    disaster_type_names(shelters_df))
     verify_review_data(review_data, final_df, top_n)
 
     # 画面（HTML/CSS/JavaScript）はPython文字列として持たず、review_template.html から読み込む。

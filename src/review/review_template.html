@@ -72,7 +72,24 @@
   #selected-summary .title { font-size: 15px; font-weight: 600; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
   th, td { border: 1px solid var(--border); padding: 5px 7px; text-align: left; vertical-align: top; }
-  th { background: #eef1f5; font-weight: 600; white-space: nowrap; }
+  th { background: #eef1f5; font-weight: 600; }
+  /* 災害種別の対応状況。記号（○△×）で意味が分かるようにし、色は補助に留める。
+     縦に積まず横へ流して折り返す（地図の表示領域を狭めないため）。 */
+  .support-summary { font-weight: 600; margin-right: 6px; }
+  .support-item {
+    display: inline-block; white-space: nowrap; margin: 1px 6px 1px 0;
+    padding: 0 5px; border-radius: 3px; border: 1px solid var(--border);
+  }
+  .support-item.partial { background: var(--warn-bg); border-color: var(--warn-border); color: #8a4b08; }
+  .support-item.none { background: #f2f4f7; color: var(--muted); }
+  .support-item.unknown { background: #fdeeea; border-color: #d99a86; color: #a13a0c; }
+  /* ハザード区分は災害種別ごとにまとめて、横へ流す */
+  .hazard-group { display: inline-block; margin-right: 10px; }
+  /* 順位・距離は折り返さず最小幅にし、避難所名とハザード欄へ幅を回す */
+  #candidates th:nth-child(1), #candidates td:nth-child(1),
+  #candidates th:nth-child(3), #candidates td:nth-child(3) { white-space: nowrap; width: 1%; }
+  #candidates td:nth-child(3) { text-align: right; }
+  #candidates th:nth-child(2), #candidates td:nth-child(2) { min-width: 8em; }
   tbody tr { cursor: pointer; }
   tbody tr:hover { background: #f2f6fb; }
   tbody tr.active { background: #e3edf9; }
@@ -90,20 +107,6 @@
     width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff;
     box-shadow: 0 0 0 1px rgba(0,0,0,.4); color: #fff; font-weight: 700; font-size: 12px;
     line-height: 18px; text-align: center;
-  }
-  #overview-map {
-    position: relative; width: 100%; border: 1px solid var(--border); border-radius: 4px;
-    overflow: hidden; background: #eef1f5;
-  }
-  #overview-map img { display: block; width: 100%; height: auto; }
-  #overview-detail-rect {
-    position: absolute; border: 2px solid #c62828; background: rgba(198, 40, 40, .12);
-    pointer-events: none;
-  }
-  #overview-resident-dot {
-    position: absolute; width: 9px; height: 9px; margin-left: -5px; margin-top: -5px;
-    border-radius: 50%; background: #14213d; border: 1px solid #fff;
-    box-shadow: 0 0 0 1px rgba(0,0,0,.5); pointer-events: none;
   }
 </style>
 </head>
@@ -156,15 +159,6 @@
         </div>
         <div class="count">要支援者を選ぶと、その人に関係する種別を自動で表示します。</div>
       </div>
-      <div class="section" id="overview-section">
-        <h2>沖縄本島内の位置</h2>
-        <div id="overview-map">
-          <img id="overview-img" alt="沖縄本島概要図">
-          <div id="overview-detail-rect"></div>
-          <div id="overview-resident-dot"></div>
-        </div>
-        <div class="count">赤い枠: 詳細図（メイン地図）の範囲 ／ 点: 選択中の要支援者</div>
-      </div>
     </div>
     <div id="content">
       <div id="map"></div>
@@ -187,6 +181,7 @@
   var DATA = JSON.parse(document.getElementById("review-data").textContent);
   var RESIDENTS = DATA.residents || [];
   var HAZARD_LAYERS = DATA.hazard_layers || [];
+  var DISASTER_TYPES = DATA.disaster_types || [];
   var BASEMAP = DATA.basemap || {};
   var BASEMAP_ATTRIBUTION = DATA.basemap_attribution || "";
   var RESULT_LIMIT = 50;
@@ -395,67 +390,6 @@
     });
   }
 
-  // ---- 沖縄本島概要図（背景PNGの上へ、詳細図の範囲・選択中の要支援者位置をCSSで重ねる） ----
-  // 地理院タイル・背景PNGはWeb Mercator（緯度方向は非線形）で作っているため、単純な
-  // 緯度の線形補間で点を置くと、実際の画像上の位置と少しずれる。画像と同じ投影になる
-  // よう、緯度はメルカトルのY座標へ変換してから画像内の位置（%）を計算する。
-  function mercatorY(latDeg) {
-    var rad = latDeg * Math.PI / 180;
-    return Math.log(Math.tan(Math.PI / 4 + rad / 2));
-  }
-
-  function fractionX(lon, minLon, maxLon) {
-    return (lon - minLon) / (maxLon - minLon);
-  }
-
-  function fractionY(lat, minLat, maxLat) {
-    var y = mercatorY(lat), yMin = mercatorY(minLat), yMax = mercatorY(maxLat);
-    return (yMax - y) / (yMax - yMin);
-  }
-
-  function initOverviewMap() {
-    if (!BASEMAP.overview) {
-      el("overview-section").style.display = "none";
-      return;
-    }
-    el("overview-img").src = BASEMAP.overview.image;
-    if (BASEMAP.detail) {
-      positionOverviewRect(BASEMAP.detail.bounds, BASEMAP.overview.bounds);
-    } else {
-      el("overview-detail-rect").style.display = "none";
-    }
-  }
-
-  function positionOverviewRect(detailBounds, overviewBounds) {
-    var minLat = overviewBounds[0][0], minLon = overviewBounds[0][1];
-    var maxLat = overviewBounds[1][0], maxLon = overviewBounds[1][1];
-    var dMinLat = detailBounds[0][0], dMinLon = detailBounds[0][1];
-    var dMaxLat = detailBounds[1][0], dMaxLon = detailBounds[1][1];
-    var rect = el("overview-detail-rect");
-    var left = fractionX(dMinLon, minLon, maxLon) * 100;
-    var right = fractionX(dMaxLon, minLon, maxLon) * 100;
-    var top = fractionY(dMaxLat, minLat, maxLat) * 100;
-    var bottom = fractionY(dMinLat, minLat, maxLat) * 100;
-    rect.style.left = left + "%";
-    rect.style.width = Math.max(0, right - left) + "%";
-    rect.style.top = top + "%";
-    rect.style.height = Math.max(0, bottom - top) + "%";
-  }
-
-  function updateOverviewResident(resident) {
-    if (!BASEMAP.overview) { return; }
-    var dot = el("overview-resident-dot");
-    if (!resident || !resident.has_coordinates) {
-      dot.style.display = "none";
-      return;
-    }
-    var minLat = BASEMAP.overview.bounds[0][0], minLon = BASEMAP.overview.bounds[0][1];
-    var maxLat = BASEMAP.overview.bounds[1][0], maxLon = BASEMAP.overview.bounds[1][1];
-    dot.style.display = "block";
-    dot.style.left = (fractionX(resident.longitude, minLon, maxLon) * 100) + "%";
-    dot.style.top = (fractionY(resident.latitude, minLat, maxLat) * 100) + "%";
-  }
-
   // ---- 検索・一覧 ----
   function normalize(value) { return (value == null ? "" : String(value)).toLowerCase(); }
 
@@ -556,13 +490,11 @@
 
     if (selectedIndex < 0) {
       setText(summary, "要支援者を選択してください。");
-      updateOverviewResident(null);
       return;
     }
 
     var resident = RESIDENTS[selectedIndex];
     applyRelevantLayers(resident);
-    updateOverviewResident(resident);
 
     var title = createRow("div", "title");
     setText(title, resident.resident_id);
@@ -578,8 +510,9 @@
     if (resident.resident_in_hazard !== null && resident.resident_in_hazard !== undefined) {
       var hazard = createRow("div", resident.resident_in_hazard ? "hazard-yes" : "hazard-no");
       setText(hazard, resident.resident_in_hazard
-        ? "要支援者地点のハザード: " + (resident.resident_hazard_types.join(" / ") || "該当あり")
-        : "要支援者地点のハザード: 区域外");
+        ? "要支援者地点のハザード: "
+          + (groupHazardTypes(resident.resident_hazard_types).join("　") || "該当あり")
+        : "要支援者地点のハザード: 該当なし");
       summary.appendChild(hazard);
     }
 
@@ -593,6 +526,26 @@
     drawResident(resident);
   }
 
+  // ---- ハザード区分の表示 ----
+  // hazard_type は「津波:0.01m以上0.3m未満」のように「災害種別:区分」で入っている。
+  // 同じ災害種別が何行も並ぶと読みにくいため、災害種別ごとにまとめて重複を除く。
+  // 区分名は公式データの表記をそのまま使う（言い換えない）。
+  function groupHazardTypes(types) {
+    var order = [];
+    var detailsByType = {};
+    (types || []).forEach(function (value) {
+      var text = String(value);
+      var separator = text.indexOf(":");
+      var name = separator < 0 ? text : text.slice(0, separator);
+      var detail = separator < 0 ? "" : text.slice(separator + 1);
+      if (!detailsByType[name]) { detailsByType[name] = []; order.push(name); }
+      if (detail && detailsByType[name].indexOf(detail) < 0) { detailsByType[name].push(detail); }
+    });
+    return order.map(function (name) {
+      return detailsByType[name].length ? name + "：" + detailsByType[name].join("・") : name;
+    });
+  }
+
   function hazardCell(isHazard, types) {
     var cell = document.createElement("td");
     if (isHazard === null || isHazard === undefined) {
@@ -600,8 +553,91 @@
       setText(cell, "判定なし");
       return cell;
     }
-    cell.className = isHazard ? "hazard-yes" : "hazard-no";
-    setText(cell, isHazard ? (types.join(" / ") || "該当あり") : "なし");
+    if (!isHazard) {
+      cell.className = "hazard-no";
+      setText(cell, "該当なし");
+      return cell;
+    }
+    cell.className = "hazard-yes";
+    var groups = groupHazardTypes(types);
+    if (!groups.length) {
+      setText(cell, "該当あり");
+      return cell;
+    }
+    groups.forEach(function (text, position) {
+      if (position > 0) { cell.appendChild(document.createTextNode(" ")); }
+      var group = createRow("span", "hazard-group");
+      setText(group, text);
+      cell.appendChild(group);
+    });
+    return cell;
+  }
+
+  // ---- 災害種別の対応状況の表示 ----
+  // disaster_support には「洪水:対応済み;高潮:2階以上であれば対応済み」のように
+  // 対応している種別だけが入る。非対応を区別するため、避難所データにある災害種別の
+  // 全一覧（DISASTER_TYPES）と突き合わせる。
+  var SUPPORT_FULL = "対応済み";
+  var SUPPORT_PARTIAL = "2階以上であれば対応済み";
+
+  function parseDisasterSupport(text) {
+    var byType = {};
+    (text == null ? "" : String(text)).split(";").forEach(function (part) {
+      var separator = part.indexOf(":");
+      if (separator > 0) { byType[part.slice(0, separator)] = part.slice(separator + 1); }
+    });
+    return byType;
+  }
+
+  function appendSupportItem(cell, name, mark, text, className) {
+    cell.appendChild(document.createTextNode(" "));
+    var item = createRow("span", "support-item " + className);
+    setText(item, name + " " + mark + (text ? " " + text : ""));
+    cell.appendChild(item);
+  }
+
+  function disasterSupportCell(candidate) {
+    var cell = document.createElement("td");
+    if (!DISASTER_TYPES.length) {
+      cell.className = "hazard-no";
+      setText(cell, "情報なし");
+      return cell;
+    }
+
+    var supported = parseDisasterSupport(candidate.disaster_support);
+    var fullCount = 0;
+    var others = [];
+    DISASTER_TYPES.forEach(function (name) {
+      var label = supported[name];
+      if (label === SUPPORT_FULL) {
+        fullCount += 1;
+      } else if (label === SUPPORT_PARTIAL) {
+        others.push({ name: name, mark: "△", text: "2階以上", className: "partial" });
+      } else if (label === undefined) {
+        others.push({ name: name, mark: "×", text: "非対応", className: "none" });
+      } else {
+        // 1/2/空欄以外の想定外のコード値。独自に「対応」と推測せず、値をそのまま見せる。
+        others.push({ name: name, mark: "?", text: label, className: "unknown" });
+      }
+    });
+
+    var summary = createRow("span", "support-summary");
+    if (!others.length) {
+      setText(summary, "全" + DISASTER_TYPES.length + "種に対応");
+      cell.appendChild(summary);
+      return cell;
+    }
+    if (!fullCount && others.every(function (item) { return item.mark === "×"; })) {
+      setText(summary, "全" + DISASTER_TYPES.length + "種が非対応");
+      cell.appendChild(summary);
+      return cell;
+    }
+
+    setText(summary, fullCount + "/" + DISASTER_TYPES.length + "種対応");
+    cell.appendChild(summary);
+    others.forEach(function (item) {
+      appendSupportItem(cell, item.name, item.mark, item.text, item.className);
+    });
     return cell;
   }
 
@@ -617,7 +653,8 @@
     var table = document.createElement("table");
     var thead = document.createElement("thead");
     var headRow = document.createElement("tr");
-    ["順位", "避難所名", "直線距離", "災害種別対応", "避難所地点のハザード", "直線交差ハザード"]
+    ["順位", "避難所名", "直線距離", "避難所地点のハザード", "災害種別対応",
+     "本人と避難所の間のハザード区域（参考）"]
       .forEach(function (name) {
         var th = document.createElement("th");
         setText(th, name);
@@ -650,12 +687,10 @@
       setText(distanceCell, candidate.distance_m == null ? "" : candidate.distance_m + " m");
       row.appendChild(distanceCell);
 
-      var supportCell = document.createElement("td");
-      setText(supportCell, candidate.disaster_support || "");
-      row.appendChild(supportCell);
-
       row.appendChild(hazardCell(candidate.shelter_in_hazard, candidate.shelter_hazard_types));
-      row.appendChild(hazardCell(candidate.straight_line_intersects_hazard, candidate.straight_line_hazard_types));
+      row.appendChild(disasterSupportCell(candidate));
+      row.appendChild(hazardCell(candidate.straight_line_intersects_hazard,
+                                 candidate.straight_line_hazard_types));
 
       row.addEventListener("click", function () {
         activeRank = activeRank === candidate.rank ? null : candidate.rank;
@@ -669,7 +704,9 @@
     container.appendChild(table);
 
     var note = createRow("div", "count");
-    setText(note, "距離は直線距離（geodesic）です。道路距離ではありません。順位はハザード情報では変わりません。");
+    setText(note,
+      "距離と「本人と避難所の間のハザード区域」は、本人と避難所を結ぶ直線上の参考情報です"
+      + "（道路距離・避難経路ではありません）。順位はハザード情報では変わりません。");
     container.appendChild(note);
   }
 
@@ -727,7 +764,6 @@
   // ---- 起動 ----
   setText(el("generated-at"), DATA.generated_at ? "（作成: " + DATA.generated_at + "）" : "");
   initMap();
-  initOverviewMap();
   renderLayerControls();
   el("search").addEventListener("input", applyFilter);
   el("prev").addEventListener("click", function () { step(-1); });
