@@ -180,10 +180,29 @@ class DifferentAddressTest(unittest.TestCase):
         self.assertEqual(geocode("糸満市字糸満町1番地")["matched_town"], "字糸満町")
         self.assertEqual(geocode("糸満市字糸満673")["matched_town"], "字糸満")
 
-    def test_別名が複数の町字に当たる場合は確定させない(self):
-        for address in ("糸満市上里1番地", "糸満市字上里1番地", "糸満市大字上里1番地"):
+    def test_正式名称に一致する入力は別名より優先する(self):
+        """「字上里」と「大字上里」が別の町字として存在する場合、正式名称そのものの入力は
+        その町字へ一致させる（別名として当たるもう一方では曖昧扱いにしない）。"""
+        self.assertEqual(geocode("糸満市字上里1番地")["matched_town"], "字上里")
+        self.assertEqual(geocode("糸満市大字上里1番地")["matched_town"], "大字上里")
+
+    def test_接頭辞を省略した入力だけ曖昧扱いにする(self):
+        """「上里」は「字上里」「大字上里」のどちらとも判断できないためambiguous_townとする。"""
+        self.assertEqual(geocode("糸満市上里1番地")["status"], "ambiguous_town")
+
+    def test_接頭辞の無い町字に字大字の別名を作らない(self):
+        """正式名称が「字」「大字」で始まらない町字（西崎町1丁目）に、存在しない別名を作らない。"""
+        self.assertEqual(geocode("沖縄県糸満市西崎町1丁目1番地")["status"], "residential_display_area")
+        for address in ("沖縄県糸満市字西崎町1丁目1番地", "沖縄県糸満市大字西崎町1丁目1番地"):
             with self.subTest(address):
-                self.assertEqual(geocode(address)["status"], "ambiguous_town")
+                self.assertEqual(geocode(address)["status"], "town_not_found")
+
+    def test_町字の検索キー(self):
+        """検索キーの作られ方を直接確認する。"""
+        town_search_keys = LOGIC["town_search_keys"]
+        self.assertEqual(town_search_keys("字糸満"), ["字糸満", "糸満", "大字糸満"])
+        self.assertEqual(town_search_keys("大字上里"), ["大字上里", "上里", "字上里"])
+        self.assertEqual(town_search_keys("西崎町1丁目"), ["西崎町1丁目"])
 
     def test_地番の漢数字は変換しない(self):
         """丁目以外の漢数字は桁の解釈が一意に決まらないため、推測せずparcel_not_foundとする。"""
