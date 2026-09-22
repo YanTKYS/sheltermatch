@@ -231,13 +231,14 @@ JageocoderもABR Geocoderも、辞書・キャッシュ生成のために配布�
 * 要支援者-候補避難所間の直線交差判定
 * 複数ハザード種別の保持
 * UTF-8 BOM付き結果CSV出力
-* レビュー用HTML出力(`sheltermatch_review.zip`。実装は `src/review/` の外部ファイル。下記「6.1」を参照)
+* レビュー用HTML出力(`sheltermatch_review.zip`。下記「6.1」を参照)
 * 座標欠損・不正行を削除せず結果へ保持(入力した値も書き換えずそのまま保持)
 * 座標欄が空欄(`no_coordinates`)と、値は入っているが使えない(`invalid_coordinates`)の区別
 * ハザードデータ未読込のまま候補算出セルを実行した場合の停止(全行を「区域外」と出力しない)
 * 前回の結果CSVをそのまま再投入した場合の結果列の置き換え
 
 ハザードデータの取得元・具体的な操作手順は [docs/hazard-data.md](./hazard-data.md) を参照。
+ハザード読込処理の置き場所は下記「6.2」を参照。
 
 ### 6.1 レビュー用HTML(補助成果物)
 
@@ -247,22 +248,7 @@ CSVの候補結果を職員が地図上で目視確認するための補助成�
 最終出力セルで `sheltermatch_review.zip` を出力する。展開して `review.html` を開くと、要支援者を
 1人ずつ選んで、要支援者地点・候補避難所1〜3・両者を結ぶ直線・ハザード区域を地図で確認できる。
 
-#### 実装の置き場所
-
-レビュー用HTMLの実装は、Notebookの中ではなく通常のPython / HTMLファイルとして保守する。
-
-* レビュー生成処理: `src/review/review_builder.py`
-* 画面テンプレート(HTML / CSS / JavaScript): `src/review/review_template.html`
-
-`sheltermatch.ipynb` は「レビュー生成モジュール準備」セルで、Google Colab実行時にこの2ファイルを
-GitHub(`main`)から取得して一時ディレクトリへ保存し、`importlib` でモジュールとして読み込む
-(取得したコードを `exec()` で直接実行はしない)。取得に失敗した場合は分かりやすいエラーで停止する。
-`review_builder.py` は `REVIEW_BUILDER_API_VERSION` を持ち、Notebook側が期待値と一致することを
-確認してから処理を進める。最終出力セルは `review_builder.build_review_package()` を呼ぶだけで、
-レビュー生成に必要なデータはすべて引数で渡す(Notebookのグローバル変数へ暗黙に依存しない)。
-
-GitHubへ通信するのは、**Google Colabでレビュー成果物を生成するときだけ** である。できあがった
-`sheltermatch_review.zip` は従来どおり、外部通信なしで利用できる(下記のとおり必要なものはすべて同梱する)。
+実装の置き場所は「6.2 Notebook外へ切り出した実装」を参照。
 
 **地図ライブラリ(Leaflet)・背景地図PNG・ハザードPNGはいずれも成果物へ同梱するため、展開した
 フォルダだけで、外部通信なしに `review.html` を開ける(背景地図も既定でON)。** 背景地図は
@@ -300,6 +286,31 @@ GitHubへ通信するのは、**Google Colabでレビュー成果物を生成す
   結ぶ線は直線(直線交差判定に使っている線)として表示し、避難経路とは表示しない
 * `ENABLE_HAZARD_CHECK=False` の場合もHTMLは生成でき、背景地図・概要図は表示されるが、
   ハザードPNG・レイヤ操作は表示しない
+
+### 6.2 Notebook外へ切り出した実装
+
+Notebookが「利用者が上から順に実行する手順」として読めるよう、実装の詳細は通常のPython /
+HTMLファイルとして保守し、Notebook側には職員が実際に行う操作だけを残す。
+
+| ファイル | 内容 | Notebookから呼ぶ入口 |
+| --- | --- | --- |
+| `src/hazard/hazard_loader.py` | ハザードデータ(GeoJSON / Shapefile / 公式配布ZIP)の読込・正規化・統合 | `load_uploaded_hazards()` |
+| `src/review/review_builder.py` | レビュー成果物の生成(地図素材の準備・ハザードPNG・データ組み立て・ZIP出力) | `build_review_package()` |
+| `src/review/review_template.html` | `review.html` の画面(HTML / CSS / JavaScript) | (テンプレートとして読み込む) |
+
+`sheltermatch.ipynb` は「外部モジュール準備」セルで、Google Colab実行時にこの3ファイルを
+GitHub(`main`)から取得して一時ディレクトリへ保存し、`importlib` でモジュールとして読み込む
+(取得したコードを `exec()` で直接実行はしない)。取得に失敗した場合は分かりやすいエラーで停止する。
+
+各モジュールは `HAZARD_LOADER_API_VERSION` / `REVIEW_BUILDER_API_VERSION` を持ち、Notebook側が
+期待値と一致することを確認してから処理を進める(互換性のない組み合わせのまま処理を続けない)。
+
+Notebook側に残すのは、`ENABLE_HAZARD_CHECK` 等の設定・ファイルのアップロード操作・必要なときの
+ハザード種別入力・処理結果と処理時間の表示・後続の候補算出/ハザード判定である。モジュールは
+Notebookのグローバル変数には依存せず、必要なデータはすべて引数で受け取る。
+
+GitHubへ通信するのは、**Google Colabで処理を実行するときだけ** である。できあがった
+`sheltermatch_review.zip` は従来どおり、外部通信なしで利用できる(必要なものはすべて同梱する)。
 
 ---
 
@@ -391,8 +402,8 @@ BODIK避難所データとの組合せも含め、緯度・経度入り実デー
   （レビューHTMLで51人目以降を選ぶと一覧から選択中の行が消える不具合、ZIP内の大文字拡張子を
   読み取れない不具合の修正。レビューHTML生成セルの分割）
 
-その後、レビューHTML生成の実装はNotebookから `src/review/` の通常ファイルへ切り出した
-（上記「6.1 実装の置き場所」を参照）。
+その後、レビューHTML生成とハザードデータ読込の実装を、Notebookから `src/` の通常ファイルへ
+切り出した（上記「6.2 Notebook外へ切り出した実装」を参照）。
 
 ---
 
