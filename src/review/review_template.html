@@ -506,10 +506,20 @@
   // ---- 選択 ----
   function select(index) {
     selectedIndex = index;
-    activeRank = null;
+    activeRank = defaultRank(index);
     renderResults();
     updatePosition();
     renderSelected();
+  }
+
+  // 道路に沿った参考経路がある場合は、要支援者を選んだ時点で候補1を選択状態にして、その経路を
+  // すぐに表示する。候補1の経路を算出できなかった場合も、候補2・3へ自動では切り替えない
+  // （候補順位は直線距離による既存の順位のため、「候補1: 経路を算出できません」とそのまま示す）。
+  // 道路経路を作成しない設定・作成できなかった場合は、従来どおり何も選ばない。
+  function defaultRank(index) {
+    if (!ROUTES_OK || index < 0) { return null; }
+    var candidates = RESIDENTS[index].candidates;
+    return candidates.length && candidates[0].rank === 1 ? 1 : null;
   }
 
   function renderSelected() {
@@ -621,6 +631,7 @@
       setText(box, "避難所候補が無いため、道路に沿った参考経路もありません。");
       return;
     }
+    // 候補がある場合は要支援者を選んだ時点で候補1を選択するため、通常はここを通らない（念のための案内）
     var candidate = activeCandidate(resident);
     if (!candidate) {
       setText(box, "候補表の行を選ぶと、その候補の「道路に沿った参考経路」を地図に表示します。");
@@ -817,7 +828,9 @@
                                  candidate.straight_line_hazard_types));
 
       row.addEventListener("click", function () {
-        activeRank = activeRank === candidate.rank ? null : candidate.rank;
+        // 道路経路がある場合は、常にどれか1つの候補を選んだ状態にする（選択中の行を押しても外さない）。
+        // それ以外は従来どおり、選択中の行をもう一度押すと選択を外す。
+        activeRank = !ROUTES_OK && activeRank === candidate.rank ? null : candidate.rank;
         el("candidates").textContent = "";
         renderCandidateTable(resident);
         renderRouteInfo(resident);

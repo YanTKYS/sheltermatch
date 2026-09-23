@@ -46,6 +46,12 @@ def count(page, selector):
     return page.locator(selector).count()
 
 
+def active_rank(page):
+    """候補表で選択状態（active）になっている行の順位。無ければNone。"""
+    rows = page.locator("#candidates tbody tr.active")
+    return rows.first.get_attribute("data-rank") if rows.count() else None
+
+
 def box(page, selector):
     return page.locator(selector).bounding_box()
 
@@ -128,20 +134,23 @@ def check_on(page, shots, attribution):
     check("「道路に沿った参考経路」の切替を表示", page.is_visible("#route-toggle"))
 
     select_resident(page, "C01")
-    check("初期表示は直線のみ（直線3本・道路経路0本）",
-          count(page, "path.straight-line") == 3 and count(page, "path.road-route-line") == 0,
-          f"直線{count(page, 'path.straight-line')} / 経路{count(page, 'path.road-route-line')}")
-    check("初期表示の案内文", "候補表の行を選ぶと" in page.inner_text("#route-info"), page.inner_text("#route-info"))
-    map_before, table_before = box(page, "#map"), box(page, "#candidates table")
+    info = page.inner_text("#route-info")
+    check("要支援者を選ぶと候補1が自動で選択状態になる", active_rank(page) == "1", f"選択中の行: {active_rank(page)}")
+    check("候補1の道路経路と接続部分をすぐに表示",
+          count(page, "path.road-route-line") == 1 and count(page, "path.road-route-connector") == 2,
+          f"経路{count(page, 'path.road-route-line')} / 接続{count(page, 'path.road-route-connector')}")
+    check("経路情報欄に候補1の情報を表示", info.startswith("候補1「") and "道路上" in info, info)
+    check("候補がある場合は「候補表の行を選ぶと」の案内を出さない", "候補表の行を選ぶと" not in info, info)
     if shots:
-        page.screenshot(path=str(shots / "01_initial_straight_only.png"))
+        page.screenshot(path=str(shots / "01_select_resident_rank1_auto.png"))
 
     paths = {}
     for rank in (1, 2, 3):
         click_rank(page, rank)
         info = page.inner_text("#route-info")
         route_count = count(page, "path.road-route-line")
-        check(f"候補{rank}を選ぶと、その候補の道路経路を1本表示", route_count == 1, info)
+        check(f"候補{rank}を選ぶと、その候補の道路経路を1本表示", route_count == 1 and active_rank(page) == str(rank),
+              info)
         check(f"候補{rank}: 道路上の距離と接続部分を区別して表示",
               f"候補{rank}" in info and "道路上" in info and "含みません" in info and "直線距離" in info, info)
         check(f"候補{rank}: 地点と道路の接続部分を点線で2本表示",
@@ -158,25 +167,48 @@ def check_on(page, shots, attribution):
     vertices = {rank: d.count("L") + 1 for rank, d in paths.items()}
     check("道路の形に沿って曲がった経路がある（直線とは異なる）", max(vertices.values()) >= 3,
           f"頂点数 {vertices}")
-    map_after, table_after = box(page, "#map"), box(page, "#candidates table")
-    check("経路表示で地図の大きさがほとんど変わらない（高さの差30px以内）",
-          abs(map_before["height"] - map_after["height"]) <= 30 and map_before["width"] == map_after["width"],
-          f"{map_before['height']:.0f}px → {map_after['height']:.0f}px")
-    check("経路表示で候補表の高さが変わらない", abs(table_before["height"] - table_after["height"]) < 1,
-          f"{table_before['height']:.0f}px → {table_after['height']:.0f}px")
+    click_rank(page, 3)
+    check("選択中の候補をもう一度選んでも選択を保つ",
+          active_rank(page) == "3" and count(page, "path.road-route-line") == 1)
 
     note = page.inner_text("#candidates .count")
     check("ハザード列は直線についての判定である旨を表示", "道路に沿った参考経路についての判定ではありません" in note, note)
 
+    map_on, table_on = box(page, "#map"), box(page, "#candidates table")
     page.uncheck("#route-toggle")
     page.wait_for_timeout(150)
-    check("切替をオフにすると道路経路を消す", count(page, "path.road-route-line") == 0,
+    check("切替をオフにすると道路経路と接続部分だけを消す（直線・選択状態は残す）",
+          count(page, "path.road-route-line") == 0 and count(page, "path.road-route-connector") == 0
+          and count(page, "path.straight-line") == 3 and active_rank(page) == "3",
           page.inner_text("#route-info"))
+    map_off, table_off = box(page, "#map"), box(page, "#candidates table")
+    check("経路の表示・非表示で地図の大きさがほとんど変わらない（高さの差30px以内）",
+          abs(map_on["height"] - map_off["height"]) <= 30 and map_on["width"] == map_off["width"],
+          f"{map_off['height']:.0f}px（非表示） / {map_on['height']:.0f}px（表示）")
+    check("経路の表示・非表示で候補表の高さが変わらない", abs(table_on["height"] - table_off["height"]) < 1,
+          f"{table_off['height']:.0f}px / {table_on['height']:.0f}px")
+    select_resident(page, "C02")
+    check("切替オフのまま別の要支援者を選んでも道路経路は表示しない（候補1は選択状態）",
+          count(page, "path.road-route-line") == 0 and active_rank(page) == "1")
     page.check("#route-toggle")
     page.wait_for_timeout(150)
     check("切替をオンに戻すと再表示", count(page, "path.road-route-line") == 1)
+
+    # 別の要支援者へ移ると、その人の候補1に選択状態が戻る（前の人の候補3を引き継がない）
+    select_resident(page, "")
+    page.locator("#results li", has_text="C01").click()
+    page.wait_for_timeout(150)
     click_rank(page, 3)
-    check("選択中の候補をもう一度選ぶと直線だけに戻る", count(page, "path.road-route-line") == 0)
+    page.click("#next")
+    page.wait_for_timeout(150)
+    check("「次へ」で別の要支援者へ移ると候補1にリセット",
+          page.inner_text("#selected-summary .title") == "C02" and active_rank(page) == "1"
+          and page.inner_text("#route-info").startswith("候補1「"), page.inner_text("#route-info"))
+    click_rank(page, 2)
+    page.locator("#results li", has_text="C03").click()
+    page.wait_for_timeout(150)
+    check("一覧から別の要支援者を選ぶと候補1にリセット",
+          page.inner_text("#selected-summary .title") == "C03" and active_rank(page) == "1")
 
     # C07 の候補には「道路から離れた地点」の架空避難所も含まれ、その候補は避難所側の理由になる
     for query, expected, label in (
@@ -184,6 +216,13 @@ def check_on(page, shots, attribution):
         ("C07", "つながっていません", "経路なし（道路がつながっていない）"),
     ):
         select_resident(page, query)
+        info = page.inner_text("#route-info")
+        check(f"{label}（{query}）: 選んだ直後に候補1のまま「経路を算出できません」と理由を表示"
+              "（候補2・3へ自動で切り替えない）",
+              active_rank(page) == "1" and info.startswith("候補1「") and "経路を算出できません" in info
+              and count(page, "path.road-route-line") == 0, info)
+        if shots:
+            page.screenshot(path=str(shots / f"03_{query}_rank1_no_route.png"))
         seen = 0
         for rank in (1, 2, 3):
             click_rank(page, rank)
@@ -194,8 +233,6 @@ def check_on(page, shots, attribution):
                   and count(page, "path.road-route-line") == 0
                   and count(page, "path.road-route-connector") == 0, info)
         check(f"{label}（{query}）: 該当する理由を表示した候補がある", seen >= 1, f"{seen}件")
-        if shots:
-            page.screenshot(path=str(shots / f"03_{query}_no_route.png"))
 
     select_resident(page, "C08")
     found = False
@@ -230,9 +267,12 @@ def check_off(page, shots, attribution):
     check("道路経路の切替・凡例・案内を表示しない",
           not page.is_visible("#route-toggle") and not page.is_visible("#route-legend")
           and not page.is_visible("#route-info") and page.inner_text("#route-notice") == "")
+    check("要支援者を選んでも候補は自動で選択しない（従来どおり）", active_rank(page) is None)
     click_rank(page, 1)
     check("候補を選んでも直線だけを表示", count(page, "path.road-route-line") == 0
-          and count(page, "path.straight-line") == 3)
+          and count(page, "path.straight-line") == 3 and active_rank(page) == "1")
+    click_rank(page, 1)
+    check("選択中の候補をもう一度選ぶと選択を外す（従来どおり）", active_rank(page) is None)
     if shots:
         page.screenshot(path=str(shots / "05_off.png"))
 
@@ -242,6 +282,7 @@ def check_failed(page, shots, attribution):
     note = page.inner_text("#route-note")
     check("地図の表示欄に「作成できませんでした」を表示", "道路に沿った参考経路は作成できませんでした" in note, note)
     check("道路経路の切替は表示しない", not page.is_visible("#route-toggle"))
+    check("要支援者を選んでも候補は自動で選択しない（経路が無いため従来どおり）", active_rank(page) is None)
     check("見出しに参考経路の注意書きを出さない（経路を表示しないため）", page.inner_text("#route-notice") == "")
     click_rank(page, 1)
     info = page.inner_text("#route-info")
