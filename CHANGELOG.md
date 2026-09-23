@@ -47,3 +47,33 @@
 - 背景地図の生成処理（`review_builder.py`）を1枚分の処理へ整理。レビューHTMLへ埋め込む
   背景地図情報を `basemap.detail` から `basemap` へ1段浅くした
 - CSVの文字コード判定から、到達しない3段目（UTF-8）を削除（読み込めるファイルは変わらない）
+
+## 2026-09-23（道路に沿った参考経路）
+
+詳細: [docs/road-routes-check.md](docs/road-routes-check.md)
+
+### Added
+
+- レビュー画面（`review.html`）に「道路に沿った参考経路」を追加（任意。`ENABLE_ROAD_ROUTES = True` の
+  ときだけ。既定は `False` で、従来どおりの処理時間・成果物）。OpenStreetMap の徒歩用道路データ
+  （糸満市の行政区域と周囲約2km）を OSMnx で1回だけ取得し、要支援者と候補避難所1〜3の間の道路に沿った
+  最短の経路を Colab の中で算出して、経路の座標をレビューZIPへ同梱する（外部へは要支援者の情報を送らない）
+- 候補表の行を選ぶと、その候補の経路を表示する（初期表示は従来どおり直線のみ）。道路経路は実線、直線は
+  破線、地点と道路の間の接続部分は点線で区別し、道路上の距離と接続部分の長さを分けて表示する
+- 地点から150m以内に道路が無い・道路がつながっていない・地点が糸満市から1kmより外の場合は
+  「経路を算出できません」と理由を表示する（直線を道路経路として表示しない）
+- 道路データの出典（© OpenStreetMap contributors / ODbL 1.0）を、背景地図（国土地理院）とは分けて
+  画面に表示し、`assets/osm-roads-NOTICE.txt` を同梱する
+- 道路経路の回帰テスト（`test/test_road_routes.py`）と、実際の道路データでの確認手順
+  （`experiments/road_routes/`）を追加
+
+### Changed
+
+- `sheltermatch.ipynb` の「結果確認・CSV出力・レビュー用HTML出力」セルを、「結果確認・CSV出力」と
+  「レビュー用HTML出力」に分け、その間に「道路に沿った参考経路の算出（任意）」セルを追加。道路データの
+  取得に失敗しても結果CSVは先に出力済みで、レビュー用HTMLには作成できなかった旨を表示する
+- レビューHTMLの「本人と避難所の間のハザード区域（参考）」について、道路経路を表示する場合は
+  直線についての判定である旨を注記する
+- `review_builder.py` の受け渡し（`build_review_package` の引数 `road_routes`）を追加し、
+  `REVIEW_BUILDER_API_VERSION` を 2 に上げた
+- 結果CSV（`assigned_shelters.csv`）は変更なし（変更前とバイト単位で同一であることを確認済み）

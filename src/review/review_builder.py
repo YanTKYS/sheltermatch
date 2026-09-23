@@ -17,6 +17,11 @@ sheltermatch.ipynb はGoogle Colabでの実行時に、このファイルと rev
     sheltermatch_review/assets/basemap_itoman.png           … 表示範囲の背景地図
     sheltermatch_review/assets/js, css, images              … Leaflet本体（地図ライブラリ）
     sheltermatch_review/assets/leaflet-LICENSE.txt          … Leafletの公式LICENSE本文
+    sheltermatch_review/assets/osm-roads-NOTICE.txt         … 道路経路に使った道路データ（OpenStreetMap）の
+                                                              出典・ライセンス（道路経路を作成した場合のみ）
+
+道路に沿った参考経路（road_routes.py で算出。任意）は、経路の座標をreview.htmlへ埋め込むため、
+これも外部通信なしで表示できます。
 """
 import hashlib
 import io
@@ -40,7 +45,7 @@ import matplotlib.pyplot as plt  # noqa: E402  （バックエンドを指定し
 
 # Notebookとこのモジュールの受け渡し方（build_review_packageの引数・戻り値）を変えたら上げる。
 # Notebook側は読み込んだ直後にこの値を確認し、互換性のない組み合わせのまま処理を続けない。
-REVIEW_BUILDER_API_VERSION = 1
+REVIEW_BUILDER_API_VERSION = 2
 
 
 # =============================================================================
@@ -406,22 +411,28 @@ def json_value(value):
     return str(value)
 
 
-def build_review_data(final_df, review_rows, hazard_layers, basemap, top_n, disaster_types):
+def build_review_data(final_df, review_rows, hazard_layers, basemap, top_n, disaster_types,
+                      road_routes=None):
     """結果CSVと同じ実行結果から、レビューHTMLへ埋め込むデータを組み立てる。
     候補の順位・距離は候補算出ループで得たものをそのまま使い、ここで計算し直さない
-    （CSVとHTMLで候補順位がずれないようにするため）。"""
+    （CSVとHTMLで候補順位がずれないようにするため）。
+
+    road_routes は道路に沿った参考経路の算出結果（作成しない設定のときはNone）。経路は
+    候補ごとに road_route として持たせる（結果CSVには含まれない、HTMLだけの参考情報）。"""
+    route_rows = road_routes.get("routes") if road_routes else None
     residents = []
     for position in range(len(final_df)):
         row = final_df.iloc[position]
         review_row = review_rows[position]
+        resident_routes = route_rows[position] if route_rows is not None else None
 
         candidates = []
         hazard_groups = set()
-        for candidate in review_row["candidates"]:
+        for candidate_index, candidate in enumerate(review_row["candidates"]):
             shelter_types = split_hazard_types(candidate["shelter_hazard_types"])
             line_types = split_hazard_types(candidate["straight_line_hazard_types"])
             hazard_groups.update(hazard_display_group(t) for t in shelter_types + line_types)
-            candidates.append({
+            entry = {
                 "rank": candidate["rank"],
                 "name": json_value(candidate["name"]),
                 "latitude": json_value(candidate["latitude"]),
@@ -434,7 +445,12 @@ def build_review_data(final_df, review_rows, hazard_layers, basemap, top_n, disa
                     candidate["straight_line_intersects_hazard"]
                 ),
                 "straight_line_hazard_types": line_types,
-            })
+            }
+            if resident_routes is not None:
+                route = dict(resident_routes[candidate_index])
+                route.pop("rank", None)
+                entry["road_route"] = route
+            candidates.append(entry)
 
         resident_types = split_hazard_types(row.get("resident_hazard_types"))
         hazard_groups.update(hazard_display_group(t) for t in resident_types)
@@ -462,8 +478,89 @@ def build_review_data(final_df, review_rows, hazard_layers, basemap, top_n, disa
         "hazard_layers": hazard_layers,
         "basemap": basemap,
         "basemap_attribution": GSI_ATTRIBUTION_TEXT,
+        # 道路に沿った参考経路の全体の状態（作成しない設定ならNone）。候補ごとの経路は residents 側。
+        "road_routes": (
+            {key: road_routes.get(key) for key in ("status", "message", "max_connection_m", "area_name",
+                                                   "routable_margin_m", "source")}
+            if road_routes else None
+        ),
         "residents": residents,
     }
+
+
+# =============================================================================
+# 道路に沿った参考経路（任意）
+# =============================================================================
+
+OSM_NOTICE_FILENAME = "osm-roads-NOTICE.txt"
+
+
+def road_routes_unavailable(message):
+    """道路に沿った参考経路を作成できなかったこと（道路データの取得失敗など）を表す結果を返す。
+    レビューHTMLでは、その旨を表示したうえで、従来の直線表示だけを使えるようにする。"""
+    return {"status": "failed", "message": str(message)}
+
+
+def verify_road_routes(road_routes, review_rows):
+    """経路の算出結果が、レビューHTMLに載せる候補と同じ並びであることを確認する。
+    食い違う場合は、別の候補の経路を表示しないよう、HTMLを作らずに止める。"""
+    if road_routes is None or road_routes.get("status") != "ok":
+        return
+    routes = road_routes.get("routes")
+    problems = []
+    if routes is None or len(routes) != len(review_rows):
+        problems.append("要支援者の件数が一致しません")
+    else:
+        for position, (resident_routes, review_row) in enumerate(zip(routes, review_rows)):
+            ranks = [candidate["rank"] for candidate in review_row["candidates"]]
+            if [route.get("rank") for route in resident_routes] != ranks:
+                problems.append(f"CSV{position + 2}行目: 候補の並びが一致しません")
+                continue
+            if review_row["latitude"] is None and resident_routes:
+                problems.append(f"CSV{position + 2}行目: 座標が無いのに経路があります")
+            for route in resident_routes:
+                if route.get("status") == "ok" and len(route.get("path") or []) < 2:
+                    problems.append(f"CSV{position + 2}行目: 候補{route.get('rank')}の経路の座標がありません")
+    if problems:
+        raise RuntimeError(
+            "道路に沿った参考経路が、レビューHTMLの候補と対応していないため、HTMLを作らずに処理を停止しました。\n"
+            + "\n".join(f"  - {problem}" for problem in problems[:20])
+        )
+
+
+def write_osm_notice(road_routes, assets_dir):
+    """道路経路の算出に使った道路データ（OpenStreetMap）の出典・ライセンスを同梱する。
+    背景地図（国土地理院）とは別のデータのため、別のファイルにする。"""
+    source = road_routes.get("source") or {}
+    (assets_dir / OSM_NOTICE_FILENAME).write_text(
+        "道路に沿った参考経路について\n"
+        "\n"
+        "review.html の「道路に沿った参考経路」は、OpenStreetMap の徒歩用の道路データを使って、\n"
+        "このレビュー成果物を作成した時点で算出したものです（経路の座標を review.html に埋め込んでいます）。\n"
+        "背景地図（国土地理院）とは別のデータです。\n"
+        "\n"
+        f"道路データの出典: {source.get('attribution', '© OpenStreetMap contributors')}\n"
+        f"ライセンス: {source.get('license', 'Open Database License (ODbL) 1.0')}\n"
+        f"詳細: {source.get('url', 'https://www.openstreetmap.org/copyright')}\n"
+        f"取得範囲: {source.get('area', '')}\n"
+        f"取得日時: {source.get('retrieved_at', '')}\n"
+        "\n"
+        "経路は道路データ上の最短の経路を参考として示すもので、通行できるか・安全かは確認していません。\n"
+        "避難経路を示すものではありません。ハザード区域との重なりも判定していません。\n",
+        encoding="utf-8",
+    )
+
+
+def road_route_points(road_routes):
+    """表示範囲の計算に使う、経路の全座標（緯度の一覧, 経度の一覧）。"""
+    latitudes, longitudes = [], []
+    if road_routes and road_routes.get("status") == "ok":
+        for resident_routes in road_routes["routes"]:
+            for route in resident_routes:
+                for lat, lon in route.get("path") or []:
+                    latitudes.append(lat)
+                    longitudes.append(lon)
+    return latitudes, longitudes
 
 
 def verify_review_data(review_data, final_df, top_n):
@@ -555,7 +652,7 @@ def embed_review_json(review_data):
 # =============================================================================
 
 def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n, output_dir,
-                         template_path):
+                         template_path, road_routes=None):
     """レビュー用のHTML・PNGを作り、ZIPへまとめてそのパスを返す。
 
     Notebook側のグローバル変数は参照せず、必要なものはすべて引数で受け取る。
@@ -567,7 +664,11 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
     top_n         候補の件数（TOP_N）
     output_dir    ZIPと作業用フォルダの出力先
     template_path review_template.html のパス
+    road_routes   道路に沿った参考経路の算出結果（road_routes.compute_road_routes の戻り値、
+                  または road_routes_unavailable() の戻り値）。作成しない設定のときはNone
     """
+    verify_road_routes(road_routes, review_rows)
+
     package_dir = Path(output_dir) / REVIEW_PACKAGE_NAME
     assets_dir = package_dir / "assets"
     if package_dir.exists():
@@ -581,6 +682,10 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
     longitudes = [row["longitude"] for row in review_rows if row["longitude"] is not None]
     latitudes += list(shelters_df["latitude"])
     longitudes += list(shelters_df["longitude"])
+    # 道路経路は直線より遠回りして表示範囲の外へ出ることがあるため、経路も背景地図の範囲に含める
+    route_latitudes, route_longitudes = road_route_points(road_routes)
+    latitudes += route_latitudes
+    longitudes += route_longitudes
 
     bundle_leaflet(assets_dir)
     display_bounds = review_display_bounds(latitudes, longitudes)
@@ -592,13 +697,16 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
     basemap = render_offline_basemap(display_bounds, assets_dir)
 
     review_data = build_review_data(final_df, review_rows, hazard_layers, basemap, top_n,
-                                    disaster_type_names(shelters_df))
+                                    disaster_type_names(shelters_df), road_routes)
     verify_review_data(review_data, final_df, top_n)
 
     # 画面（HTML/CSS/JavaScript）はPython文字列として持たず、review_template.html から読み込む。
     template = Path(template_path).read_text(encoding="utf-8")
     html = template.replace("__REVIEW_DATA_JSON__", embed_review_json(review_data))
     (package_dir / "review.html").write_text(html, encoding="utf-8")
+
+    if road_routes and road_routes.get("status") == "ok":
+        write_osm_notice(road_routes, assets_dir)
 
     zip_path = Path(output_dir) / REVIEW_ZIP_FILENAME
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -619,4 +727,13 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
         print("ハザード表示用PNG:")
         for layer in hazard_layers:
             print(f"  {layer['label']}: {layer['polygon_count']}ポリゴン → {layer['image']}")
+    # 道路経路を作成しない設定（road_routes is None）のときは、従来どおり何も表示しない
+    if road_routes is not None and road_routes.get("status") == "ok":
+        stats = road_routes["stats"]
+        print(f"道路に沿った参考経路（道路データ: OpenStreetMap）: 候補 延べ{stats['routes']}件中 "
+              f"{stats['ok']}件を表示できます（算出できなかった {stats['routes'] - stats['ok']}件は"
+              "その旨を表示します）。")
+    elif road_routes is not None:
+        print("道路に沿った参考経路は作成できませんでした。review.html にはその旨を表示し、"
+              "直線の表示だけを利用できるようにしています。")
     return zip_path

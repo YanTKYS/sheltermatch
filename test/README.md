@@ -30,9 +30,16 @@ python3 -m unittest discover -s test
 丁目、ハイフン類、空白、「字」「大字」の有無、`番地`/`番`/`号`/`の` の表記差）が同じ地番・同じ座標へ
 変換されることと、別の住所を同一視していないことを確認する。
 
+`test_road_routes.py` は、道路に沿った参考経路（`src/review/road_routes.py`）とレビューHTMLへの
+受け渡しの回帰テスト。外部通信は行わず、OSMnx が返すグラフと同じ形の小さな架空の道路網で、道路の形に
+沿うこと・networkx と同じ最短距離になること・遠すぎる道路へ接続しないこと・つながらない場合や
+取得範囲の端では経路を作らないこと等を確認する。実際の道路データでの確認は
+[docs/road-routes-check.md](../docs/road-routes-check.md) を参照。
+
 ## ファイル
 
 * `test_address_conversion.py`: 住所変換の回帰テスト(上記「自動テスト」を参照)。
+* `test_road_routes.py`: 道路に沿った参考経路の回帰テスト(上記「自動テスト」を参照)。
 * `residents_sample_enriched.csv`: 回帰確認用の架空要支援者CSV。共通住民CSVの5列
   (`resident_id,address,latitude,longitude,geocode_status`) に、確認内容を書いた `note` 列を
   追加したもの。`note` のような追加列は、`sheltermatch.ipynb` がそのまま結果CSVへ引き継ぐ。
