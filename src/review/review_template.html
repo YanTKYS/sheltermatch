@@ -188,8 +188,8 @@
   var RESIDENTS = DATA.residents || [];
   var HAZARD_LAYERS = DATA.hazard_layers || [];
   var DISASTER_TYPES = DATA.disaster_types || [];
-  var BASEMAP = DATA.basemap || {};
-  var BASEMAP_ATTRIBUTION = DATA.basemap_attribution || "";
+  var BASEMAP = DATA.basemap;
+  var BASEMAP_ATTRIBUTION = DATA.basemap_attribution;
   var RESULT_LIMIT = 50;
   var RANK_COLORS = ["#c62828", "#ef6c00", "#b58900"];
   var RESIDENT_COLOR = "#14213d";
@@ -207,7 +207,7 @@
 
   function setText(node, value) { node.textContent = value == null ? "" : String(value); }
 
-  function createRow(tag, className) {
+  function createElement(tag, className) {
     var node = document.createElement(tag);
     if (className) { node.className = className; }
     return node;
@@ -229,6 +229,13 @@
   // レイヤーの追加・削除順に依存しないよう、専用のpane（重なり順を決める階層）を
   // 用意してzIndexで順序を固定する（basemapPane=200 < hazardPane=300
   // < 直線・線を置く既定のoverlayPane=400 < マーカーの既定のmarkerPane=600）。
+  //
+  // 拡大・縮小できる範囲を、市内の確認に必要な範囲に限る。制限しないと、ホイール操作を
+  // 続けるだけで際限なく拡大・縮小でき、背景地図・マーカーが画面から消えて、どこを見ているのか
+  // 分からなくなる（背景地図は最大でもズーム15相当の画像のため、18より先は拡大しても細部は増えない）。
+  var MIN_ZOOM = 10;
+  var MAX_ZOOM = 18;
+
   function initMap() {
     if (typeof L === "undefined") {
       el("map").style.display = "none";
@@ -240,40 +247,29 @@
         "検索・候補一覧はこのまま利用できます。");
       return;
     }
-    map = L.map("map").setView([26.125, 127.68], 13);
+    map = L.map("map", { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM }).setView([26.125, 127.68], 13);
     map.createPane("basemapPane").style.zIndex = 200;
     map.createPane("hazardPane").style.zIndex = 300;
     featureLayer = L.layerGroup().addTo(map);
     graticuleLayer = L.layerGroup().addTo(map);
     initBasemap();
     buildOverlays();
-    map.on("moveend zoomend", drawGraticule);
+    map.on("moveend", drawGraticule);
     drawGraticule();
     renderAttribution();
   }
 
   // ---- 背景地図（同梱のオフラインPNG。既定でON、外部通信なし） ----
   function initBasemap() {
-    if (!map || !BASEMAP.detail) {
-      el("basemap-toggle").checked = false;
-      el("basemap-toggle").disabled = true;
-      setText(el("basemap-note"), "背景地図の画像データがありません。");
-      return;
-    }
-    basemapLayer = L.imageOverlay(BASEMAP.detail.image, BASEMAP.detail.bounds, {
-      pane: "basemapPane"
-    });
+    basemapLayer = L.imageOverlay(BASEMAP.image, BASEMAP.bounds, { pane: "basemapPane" });
     basemapLayer.once("add", function () {
-      var imageElement = basemapLayer.getElement ? basemapLayer.getElement() : null;
-      if (imageElement) {
-        imageElement.addEventListener("error", function () {
-          var note = el("basemap-note");
-          note.className = "map-note warn";
-          setText(note,
-            "背景地図画像を読み込めませんでした。review.html と同じ場所に " +
-            "assets フォルダごと展開されているか確認してください。");
-        });
-      }
+      basemapLayer.getElement().addEventListener("error", function () {
+        var note = el("basemap-note");
+        note.className = "map-note warn";
+        setText(note,
+          "背景地図画像を読み込めませんでした。review.html と同じ場所に " +
+          "assets フォルダごと展開されているか確認してください。");
+      });
     });
     setBasemapEnabled(el("basemap-toggle").checked);
   }
@@ -289,12 +285,8 @@
 
   // ---- 出典表示（国土地理院。地理院タイルを画像化して同梱しているための表記） ----
   function renderAttribution() {
-    var node = el("map-attribution");
-    if (BASEMAP.detail && BASEMAP_ATTRIBUTION) {
-      setText(node, "背景地図: " + BASEMAP_ATTRIBUTION + "（地理院タイルをオフライン用に画像化して同梱）");
-    } else {
-      node.style.display = "none";
-    }
+    setText(el("map-attribution"),
+      "背景地図: " + BASEMAP_ATTRIBUTION + "（地理院タイルをオフライン用に画像化して同梱）");
   }
 
   // ---- 経緯度グリッド（位置の目安。背景地図に重ねて表示する） ----
@@ -335,13 +327,9 @@
 
   function buildOverlays() {
     HAZARD_LAYERS.forEach(function (layer) {
-      try {
-        overlays[layer.key] = L.imageOverlay(layer.image, layer.bounds, {
-          opacity: 0.45, pane: "hazardPane"
-        });
-      } catch (error) {
-        overlays[layer.key] = null;
-      }
+      overlays[layer.key] = L.imageOverlay(layer.image, layer.bounds, {
+        opacity: 0.45, pane: "hazardPane"
+      });
     });
   }
 
@@ -354,14 +342,14 @@
       return;
     }
     HAZARD_LAYERS.forEach(function (layer) {
-      var label = createRow("label");
+      var label = createElement("label");
       var input = document.createElement("input");
       input.type = "checkbox";
       input.dataset.key = layer.key;
       input.addEventListener("change", function () {
         setLayerEnabled(layer.key, input.checked);
       });
-      var swatch = createRow("span", "swatch");
+      var swatch = createElement("span", "swatch");
       swatch.style.background = layer.color;
       var text = document.createElement("span");
       setText(text, layer.label);
@@ -446,16 +434,16 @@
 
   function createResultItem(index) {
     var resident = RESIDENTS[index];
-    var item = createRow("li", index === selectedIndex ? "selected" : "");
+    var item = createElement("li", index === selectedIndex ? "selected" : "");
     item.dataset.index = String(index);
-    var rid = createRow("div", "rid");
+    var rid = createElement("div", "rid");
     setText(rid, resident.resident_id);
     if (!resident.has_coordinates) {
-      var badge = createRow("span", "badge");
+      var badge = createElement("span", "badge");
       setText(badge, "座標なし");
       rid.appendChild(badge);
     }
-    var addr = createRow("div", "addr");
+    var addr = createElement("div", "addr");
     setText(addr, resident.address);
     item.appendChild(rid);
     item.appendChild(addr);
@@ -502,19 +490,19 @@
     var resident = RESIDENTS[selectedIndex];
     applyRelevantLayers(resident);
 
-    var title = createRow("div", "title");
+    var title = createElement("div", "title");
     setText(title, resident.resident_id);
-    var addr = createRow("div", "addr");
+    var addr = createElement("div", "addr");
     setText(addr, resident.address);
     summary.appendChild(title);
     summary.appendChild(addr);
 
-    var status = createRow("div");
+    var status = createElement("div");
     setText(status, "match_status: " + resident.match_status);
     summary.appendChild(status);
 
     if (resident.resident_in_hazard !== null && resident.resident_in_hazard !== undefined) {
-      var hazard = createRow("div", resident.resident_in_hazard ? "hazard-yes" : "hazard-no");
+      var hazard = createElement("div", resident.resident_in_hazard ? "hazard-yes" : "hazard-no");
       setText(hazard, resident.resident_in_hazard
         ? "要支援者地点のハザード: "
           + (groupHazardTypes(resident.resident_hazard_types).join("　") || "該当あり")
@@ -523,7 +511,7 @@
     }
 
     if (!resident.has_coordinates) {
-      var noCoord = createRow("div", "empty");
+      var noCoord = createElement("div", "empty");
       setText(noCoord, "地図表示できる座標がありません（" + resident.match_status + "）。候補も算出されていません。");
       summary.appendChild(noCoord);
     }
@@ -572,7 +560,7 @@
     }
     groups.forEach(function (text, position) {
       if (position > 0) { cell.appendChild(document.createTextNode(" ")); }
-      var group = createRow("span", "hazard-group");
+      var group = createElement("span", "hazard-group");
       setText(group, text);
       cell.appendChild(group);
     });
@@ -597,7 +585,7 @@
 
   function appendSupportItem(cell, name, mark, text, className) {
     cell.appendChild(document.createTextNode(" "));
-    var item = createRow("span", "support-item " + className);
+    var item = createElement("span", "support-item " + className);
     setText(item, name + " " + mark + (text ? " " + text : ""));
     cell.appendChild(item);
   }
@@ -627,7 +615,7 @@
       }
     });
 
-    var summary = createRow("span", "support-summary");
+    var summary = createElement("span", "support-summary");
     if (!others.length) {
       setText(summary, "全" + DISASTER_TYPES.length + "種に対応");
       cell.appendChild(summary);
@@ -651,7 +639,7 @@
   function renderCandidateTable(resident) {
     var container = el("candidates");
     if (!resident.candidates.length) {
-      var empty = createRow("div", "empty");
+      var empty = createElement("div", "empty");
       setText(empty, "避難所候補はありません。");
       container.appendChild(empty);
       return;
@@ -677,7 +665,7 @@
       if (activeRank === candidate.rank) { row.className = "active"; }
 
       var rankCell = document.createElement("td");
-      var chip = createRow("span", "rank-chip");
+      var chip = createElement("span", "rank-chip");
       chip.style.background = RANK_COLORS[candidate.rank - 1] || "#555";
       setText(chip, candidate.rank);
       rankCell.appendChild(chip);
@@ -710,7 +698,7 @@
     table.appendChild(tbody);
     container.appendChild(table);
 
-    var note = createRow("div", "count");
+    var note = createElement("div", "count");
     setText(note,
       "距離と「本人と避難所の間のハザード区域」は、本人と避難所を結ぶ直線上の参考情報です"
       + "（道路距離・避難経路ではありません）。順位はハザード情報では変わりません。");

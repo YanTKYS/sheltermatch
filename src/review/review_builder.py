@@ -85,19 +85,13 @@ GSI_TILE_URL_TEMPLATE = "https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.p
 GSI_ATTRIBUTION_TEXT = "国土地理院"
 GSI_TILE_SIZE = 256
 
-# 背景地図PNGの生成設定。zoom_candidatesは解像度が高い順に並べ、先頭から試して
-# タイル数がmax_tiles以下になった最初のズームを使う（安全策）。候補のどのズームでも
-# 収まらない場合は、黙って大量取得せず処理を中止する。上限200枚は、zoom15で概ね
-# 市街地1つ分の範囲を想定した値。
-BASEMAP_SPECS = [
-    {
-        "key": "detail",
-        "filename": "basemap_itoman.png",
-        "label": "詳細背景（表示範囲）",
-        "zoom_candidates": [15, 14, 13, 12, 11],
-        "max_tiles": 200,
-    },
-]
+# 背景地図PNGの生成設定。ズームは解像度が高い順に並べ、先頭から試してタイル数が
+# BASEMAP_MAX_TILES以下になった最初のズームを使う（安全策）。どのズームでも収まらない
+# 場合は、黙って大量取得せず処理を中止する。上限200枚は、zoom15で概ね市街地1つ分の
+# 範囲を想定した値。
+BASEMAP_FILENAME = "basemap_itoman.png"
+BASEMAP_ZOOM_CANDIDATES = [15, 14, 13, 12, 11]
+BASEMAP_MAX_TILES = 200
 
 REVIEW_PACKAGE_NAME = "sheltermatch_review"
 REVIEW_ZIP_FILENAME = f"{REVIEW_PACKAGE_NAME}.zip"
@@ -194,14 +188,8 @@ def _select_basemap_zoom(bounds, zoom_candidates, max_tiles):
     return None, None, None
 
 
-def _fetch_gsi_tile(zoom, x, y, tile_cache):
-    """1枚の地理院タイルを取得する。同じNotebookセッション内で同じタイルを何度も取得しない
-    よう、メモリ上の簡易キャッシュ（tile_cache）を使う（永続的なキャッシュは行わない）。
-    失敗した場合は、どのURLで失敗したかが分かる例外を送出する。"""
-    key = (zoom, x, y)
-    if key in tile_cache:
-        return tile_cache[key]
-
+def _fetch_gsi_tile(zoom, x, y):
+    """1枚の地理院タイルを取得する。失敗した場合は、どのURLで失敗したかが分かる例外を送出する。"""
     url = GSI_TILE_URL_TEMPLATE.format(z=zoom, x=x, y=y)
     try:
         response = requests.get(url, timeout=30)
@@ -212,31 +200,32 @@ def _fetch_gsi_tile(zoom, x, y, tile_cache):
         ) from error
 
     try:
-        tile_image = Image.open(io.BytesIO(response.content)).convert("RGB")
+        return Image.open(io.BytesIO(response.content)).convert("RGB")
     except Exception as error:
         raise RuntimeError(
             f"背景地図タイルの画像を読み込めませんでした: {url}\n（詳細: {error}）"
         ) from error
 
-    tile_cache[key] = tile_image
-    return tile_image
 
-
-def render_basemap_png(bounds, spec, assets_dir, tile_cache):
-    """1件の背景地図PNGを生成する。
+def render_offline_basemap(bounds, assets_dir):
+    """表示範囲の背景地図PNGを、地理院タイルをつなぎ合わせて生成する。
 
     ハザードPNGと同じ考え方で、表示範囲の四隅をタイル座標（Web Mercator）へ変換し、
     その位置でモザイク画像を正確に切り出す。これにより、Leaflet ImageOverlayへ渡す
-    緯度経度のboundsと画像の地理範囲が一致し、ハザードPNGとも位置がずれない。"""
+    緯度経度のboundsと画像の地理範囲が一致し、ハザードPNGとも位置がずれない。
+
+    背景地図はレビュー補助情報だが、一部だけ欠けた背景地図を含むレビューZIPは作らない方針の
+    ため、1枚でも取得に失敗した場合は例外を送出して処理を止める。結果CSV
+    （assigned_shelters.csv）はこの関数の呼び出し前に出力済みのため、結果CSVには影響しない。"""
     zoom, tile_range, tile_count = _select_basemap_zoom(
-        bounds, spec["zoom_candidates"], spec["max_tiles"]
+        bounds, BASEMAP_ZOOM_CANDIDATES, BASEMAP_MAX_TILES
     )
     if zoom is None:
         min_lat, min_lon, max_lat, max_lon = bounds
         raise RuntimeError(
-            f"{spec['label']}の生成を中止しました。表示範囲が広すぎるため、"
-            f"候補のズーム{spec['zoom_candidates']}のどれを使ってもタイル数が"
-            f"上限（{spec['max_tiles']}枚）を超えます"
+            "背景地図の生成を中止しました。表示範囲が広すぎるため、"
+            f"候補のズーム{BASEMAP_ZOOM_CANDIDATES}のどれを使ってもタイル数が"
+            f"上限（{BASEMAP_MAX_TILES}枚）を超えます"
             f"（範囲: 緯度{min_lat:.4f}〜{max_lat:.4f} / 経度{min_lon:.4f}〜{max_lon:.4f}）。"
             "黙って大量のタイルを取得することは行いません。"
         )
@@ -254,15 +243,16 @@ def render_basemap_png(bounds, spec, assets_dir, tile_cache):
     output_height = max(1, round(crop_bottom - crop_top))
 
     # 安全策: 取得前に必要タイル数・想定出力サイズ・使用ズームを表示する。
+    print("背景地図（地理院タイル）を取得しています（インターネット接続が必要です）…")
     print(
-        f"[{spec['label']}] zoom={zoom} / タイル数={tile_count}枚（{columns}x{rows}）"
+        f"[背景地図] zoom={zoom} / タイル数={tile_count}枚（{columns}x{rows}）"
         f" / 想定出力サイズ={output_width}x{output_height}px"
     )
 
     mosaic = Image.new("RGB", (columns * GSI_TILE_SIZE, rows * GSI_TILE_SIZE))
     for tile_x in range(tile_x0, tile_x1 + 1):
         for tile_y in range(tile_y0, tile_y1 + 1):
-            tile_image = _fetch_gsi_tile(zoom, tile_x, tile_y, tile_cache)
+            tile_image = _fetch_gsi_tile(zoom, tile_x, tile_y)
             mosaic.paste(
                 tile_image,
                 ((tile_x - tile_x0) * GSI_TILE_SIZE, (tile_y - tile_y0) * GSI_TILE_SIZE),
@@ -272,35 +262,7 @@ def render_basemap_png(bounds, spec, assets_dir, tile_cache):
         round(crop_left), round(crop_top),
         round(crop_left) + output_width, round(crop_top) + output_height,
     ))
-    output_path = assets_dir / spec["filename"]
-    cropped.save(output_path, "PNG")
-
-    return {
-        "key": spec["key"],
-        "image": f"assets/{spec['filename']}",
-        # ImageOverlayへ渡す緯度経度の矩形。ハザードPNGと同じ表示範囲を使う場合は
-        # display_boundsそのもの。
-        "bounds": [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
-        "zoom": zoom,
-        "tile_count": tile_count,
-        "width": output_width,
-        "height": output_height,
-    }
-
-
-def render_offline_basemaps(display_bounds, assets_dir):
-    """表示範囲の背景地図PNGを生成する。
-
-    背景地図はレビュー補助情報だが、中途半端な（一部だけ生成できた）背景地図を含む
-    レビューZIPは作らない方針のため、1件でも取得・生成に失敗した場合は例外を送出して
-    処理を止める。結果CSV（assigned_shelters.csv）はこの関数の呼び出し前に出力済みのため、
-    この関数が失敗しても結果CSVには影響しない。"""
-    tile_cache = {}
-    basemaps = {}
-
-    print("背景地図（地理院タイル）を取得しています（インターネット接続が必要です）…")
-    for spec in BASEMAP_SPECS:
-        basemaps[spec["key"]] = render_basemap_png(display_bounds, spec, assets_dir, tile_cache)
+    cropped.save(assets_dir / BASEMAP_FILENAME, "PNG")
 
     notice_path = assets_dir / "gsi-basemap-NOTICE.txt"
     notice_path.write_text(
@@ -319,7 +281,14 @@ def render_offline_basemaps(display_bounds, assets_dir):
     )
 
     print(f"背景地図PNGを作成しました（出典: {GSI_ATTRIBUTION_TEXT}）。")
-    return basemaps
+    return {
+        "image": f"assets/{BASEMAP_FILENAME}",
+        # ImageOverlayへ渡す緯度経度の矩形（ハザードPNGと同じ表示範囲）。
+        "bounds": [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
+        "zoom": zoom,
+        "width": output_width,
+        "height": output_height,
+    }
 
 
 # =============================================================================
@@ -344,7 +313,7 @@ def split_hazard_types(value):
 
 def review_display_bounds(latitudes, longitudes):
     """有効な要支援者地点・避難所地点の全体範囲に余白を付けた共通表示範囲を返す
-    （min_lat, min_lon, max_lat, max_lon）。すべてのハザードPNG・詳細背景PNGでこの範囲を使う。"""
+    （min_lat, min_lon, max_lat, max_lon）。すべてのハザードPNG・背景地図PNGでこの範囲を使う。"""
     min_lat, max_lat = float(np.min(latitudes)), float(np.max(latitudes))
     min_lon, max_lon = float(np.min(longitudes)), float(np.max(longitudes))
     lat_margin = max((max_lat - min_lat) * 0.08, 0.005)
@@ -437,7 +406,7 @@ def json_value(value):
     return str(value)
 
 
-def build_review_data(final_df, review_rows, hazard_layers, basemaps, top_n, disaster_types):
+def build_review_data(final_df, review_rows, hazard_layers, basemap, top_n, disaster_types):
     """結果CSVと同じ実行結果から、レビューHTMLへ埋め込むデータを組み立てる。
     候補の順位・距離は候補算出ループで得たものをそのまま使い、ここで計算し直さない
     （CSVとHTMLで候補順位がずれないようにするため）。"""
@@ -491,7 +460,7 @@ def build_review_data(final_df, review_rows, hazard_layers, basemaps, top_n, dis
         # 避難所データにある災害種別の全一覧。画面で対応／条件付き／非対応を区別するために使う。
         "disaster_types": disaster_types,
         "hazard_layers": hazard_layers,
-        "basemap": basemaps,
+        "basemap": basemap,
         "basemap_attribution": GSI_ATTRIBUTION_TEXT,
         "residents": residents,
     }
@@ -605,7 +574,7 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
         shutil.rmtree(package_dir)
     assets_dir.mkdir(parents=True)
 
-    # 表示範囲（ハザードPNG・詳細背景PNGで共通）は、有効な要支援者地点と避難所地点から決める。
+    # 表示範囲（ハザードPNG・背景地図PNGで共通）は、有効な要支援者地点と避難所地点から決める。
     # 有効な避難所が0件の場合は避難所取得セルで既に処理を止めているため、ここでは必ず1件以上ある。
     # 背景地図の生成はハザード判定の有無（ENABLE_HAZARD_CHECK）に依存させない。
     latitudes = [row["latitude"] for row in review_rows if row["latitude"] is not None]
@@ -617,12 +586,12 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
     display_bounds = review_display_bounds(latitudes, longitudes)
 
     hazard_layers = []
-    if hazard_area is not None and len(hazard_area) > 0:
+    if hazard_area is not None:
         hazard_layers = render_hazard_images(hazard_area, display_bounds, assets_dir)
 
-    basemaps = render_offline_basemaps(display_bounds, assets_dir)
+    basemap = render_offline_basemap(display_bounds, assets_dir)
 
-    review_data = build_review_data(final_df, review_rows, hazard_layers, basemaps, top_n,
+    review_data = build_review_data(final_df, review_rows, hazard_layers, basemap, top_n,
                                     disaster_type_names(shelters_df))
     verify_review_data(review_data, final_df, top_n)
 
@@ -640,14 +609,14 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
     print(f"レビュー用HTMLを作成しました（要支援者 {len(review_data['residents'])}件）。")
     print("ZIPを展開して review.html を開けば、外部通信なしで背景地図・ハザード区域・"
           "要支援者・候補避難所を確認できます。")
-    print("背景地図PNG:")
-    for spec in BASEMAP_SPECS:
-        info = basemaps[spec["key"]]
-        print(f"  {info['image']}（zoom={info['zoom']}, {info['width']}x{info['height']}px）")
-    if hazard_layers:
+    print(f"背景地図PNG: {basemap['image']}（zoom={basemap['zoom']}, "
+          f"{basemap['width']}x{basemap['height']}px）")
+    if hazard_area is None:
+        print("ハザード判定を行っていないため、ハザード表示用PNGは作成していません。")
+    elif not hazard_layers:
+        print("地図の表示範囲にハザード区域が無いため、ハザード表示用PNGは作成していません。")
+    else:
         print("ハザード表示用PNG:")
         for layer in hazard_layers:
             print(f"  {layer['label']}: {layer['polygon_count']}ポリゴン → {layer['image']}")
-    else:
-        print("ハザード判定を行っていないため、ハザード表示用PNGは作成していません。")
     return zip_path
