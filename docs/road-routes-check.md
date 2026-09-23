@@ -3,32 +3,50 @@
 レビュー用HTMLへ追加した「道路に沿った参考経路」（`ENABLE_ROAD_ROUTES = True`）を、実際の道路データと
 架空の要支援者データで確認した記録。
 
-## 0. 確認環境と、確認できなかったこと（重要）
+## 0. 確認の経緯と、確認できたこと・できていないこと（重要）
 
-確認はこのタスクを行ったサンドボックス環境（Google Colabではない）で行った。この環境は外向き通信が
-制限されており、**OpenStreetMap の Overpass API・Nominatim へ接続できない**（接続時にプロキシが
-403 を返す。BODIK・地理院タイル・unpkg も同様）。
+確認は次の順に行った。
 
-そのため、道路データは次の代替手段で取得した。
+1. **開発環境（サンドボックス。Google Colabではない）での確認**
+   この環境は外向き通信が制限されており、**OpenStreetMap の Overpass API・Nominatim へ接続できなかった**
+   （接続時にプロキシが 403 を返す。BODIK・地理院タイル・unpkg も同様）。そのため、OSMnx による直接取得は
+   ここでは確認できず、道路データは次の代替手段で用意して、経路の算出・表示・結果CSVへの影響を確認した
+   （第1〜7節はこの環境での確認結果）。
 
-| 本番（Notebook） | 今回の確認 |
+   | 本番（Notebook） | 開発環境での代替 |
+   | --- | --- |
+   | OSMnx が Nominatim から糸満市の行政区域（OSM relation 4559181）を取得 | Overture Maps（2026-08-19.0）の divisions にある同じ行政区域（出典: OSM relation 4559181）|
+   | OSMnx が Overpass API から取得範囲の徒歩用道路を取得（`graph_from_polygon(network_type="walk")`） | Overture Maps の transportation（OSM の way を分割した道路データ。形状・接続は OSM のもの）を OSM XML へ変換し、OSMnx の `graph_from_xml` で読み込んで、Notebook と同じ取得範囲で切り出し・最大連結成分に限定 |
+
+2. **その後の Google Colab での実機確認**
+   実際の Google Colab で `ENABLE_ROAD_ROUTES = True` として実行し、次を確認した。
+   - OSMnx による Nominatim・Overpass API からの道路データ取得に成功（取得時間 約26.4秒）
+   - 道路に沿った参考経路の算出に成功（`road_routes.status = "ok"`）
+   - 経路情報を含む `sheltermatch_review.zip` の生成に成功
+
+確認済みの範囲は、確認した環境ごとに次のとおり。
+
+| 項目 | 確認状況 |
 | --- | --- |
-| OSMnx が Nominatim から糸満市の行政区域（OSM relation 4559181）を取得 | Overture Maps（2026-08-19.0）の divisions にある同じ行政区域（出典: OSM relation 4559181）|
-| OSMnx が Overpass API から取得範囲の徒歩用道路を取得（`graph_from_polygon(network_type="walk")`） | Overture Maps の transportation（OSM の way を分割した道路データ。形状・接続は OSM のもの）を OSM XML へ変換し、OSMnx の `graph_from_xml` で読み込んで、Notebook と同じ取得範囲で切り出し・最大連結成分に限定 |
+| OSMnx による道路データの取得（Nominatim・Overpass API） | **Google Colab で確認済み**（取得時間 約26.4秒） |
+| 道路経路の算出・経路情報を含むレビューZIPの生成 | **Google Colab で確認済み**。開発環境でも Overture Maps（OSM由来）の道路データで確認 |
+| 経路の正しさ（最短距離・道路の形に沿うこと）、表示できない場合の扱い、結果CSVが変わらないこと、処理時間・容量 | 開発環境で確認（第3〜7節） |
+| 候補1を自動選択して道路経路を初期表示する画面の動作 | 開発環境で、`file://` で開いた自動ブラウザテストにより確認（第5節）。**この修正を含めて Colab で作り直したレビューZIPでは未確認** |
 
-- **実際の道路の形・つながり（OSM由来）で経路を算出・表示できることは確認した**
-- **OSMnx から Overpass API・Nominatim へ実際に接続して取得する部分は未確認**（この環境では接続できない
-  ため）。Google Colab 上での取得時間も未測定
-- Overture の変換では、OSMnx の徒歩用フィルタ（motorway・cycleway・foot=no・access=private の除外）に
-  合わせたが、OSMnx が Overpass から直接取得した場合と道路の本数が完全に同じとは限らない
-- 背景地図（地理院タイル）・避難所一覧（BODIK）・Leaflet（unpkg）は、従来の確認と同様に代替した
+まだ確認していないこと・注意点:
+
+- 候補1の自動選択を含む最新の画面を、Colab で作り直したレビューZIPで開いての確認
+- 開発環境で使った Overture の変換は OSMnx の徒歩用フィルタ（motorway・cycleway・foot=no・access=private の
+  除外）に合わせたが、Overpass から直接取得した道路と本数が完全に同じとは限らない。第3・7節の数値は
+  開発環境での値で、Colab で取得した道路データでの値ではない
+- 開発環境では、背景地図（地理院タイル）・避難所一覧（BODIK）・Leaflet（unpkg）も従来の確認と同様に代替した
   （背景地図は検証用に道路の線を描いた画像で、国土地理院の地図ではない。Leaflet は npm の公式配布物を
   使い、SHA-256 の照合は本体のコードがそのまま行った）
 - 実際の要支援者データでは確認していない（架空データのみ）
 
-Notebook は Colab 実行時に `src/` を GitHub の `main` から取得する。このため、**変更が `main` に
-取り込まれるまでは、Colab で道路経路を試すことはできない**（`main` 側のモジュールが古いと、Notebook の
-モジュール互換性チェックで止まる）。
+なお、Notebook は Colab 実行時に `src/` を GitHub の `main` から取得する。通常の利用では、変更が `main` に
+取り込まれてから道路経路を使えるようになる（`main` 側のモジュールが古いと、Notebook のモジュール互換性
+チェックで止まる）。
 
 ## 1. 手順（再現方法）
 
@@ -133,7 +151,7 @@ python3 experiments/road_routes/check_review_offline.py /tmp/run_on/sheltermatch
 
 ## 7. 1,000人・候補3件での処理時間とZIP容量
 
-避難所は架空の56か所。時間はこのサンドボックスでの実測（Colab ではない）。
+避難所は架空の56か所。時間は開発環境（サンドボックス）での実測で、Colab での値ではない。
 
 | | 市内の道路近くの1,000人 | 性能確認用の1,000人 |
 | --- | --- | --- |
@@ -146,7 +164,7 @@ python3 experiments/road_routes/check_review_offline.py /tmp/run_on/sheltermatch
 | review.html（経路OFF → ON） | 1.6MB → 3.6MB | 1.6MB → 3.3MB |
 
 ※ osmnx の導入確認（約3秒）と、道路データの読込（Overpass の代わりに OSM XML を読み込む時間、約8.5秒）を
-含む。Colab で Overpass API から取得する時間は未測定。
+含む。Google Colab で OSMnx により実際に道路データを取得した時間は約26.4秒だった（第0節）。
 
 性能確認用の1,000人は、糸満市を含む矩形に一様に散らばる架空データのため、海上・農地・市外の点が多く、
 算出できない件数が多い。3.6MB の review.html も Chromium で約0.5秒で開け、候補を選んでから経路が表示される
