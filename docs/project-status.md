@@ -296,9 +296,11 @@ Notebookが「利用者が上から順に実行する手順」として読める
 道路経路のセルで取得する。各モジュールのAPI互換性の値がNotebook側の期待値と一致することを確認してから処理を
 進める（互換性のない組み合わせのまま処理を続けない）。
 
-モジュールはNotebookのグローバル変数には依存せず、必要なデータはすべて引数で受け取る。GitHub・外部データ
-（BODIK・地理院タイル・Leaflet・OpenStreetMap）へ通信するのは Google Colab で処理を実行するときだけで、
-できあがった `sheltermatch_review.zip` は外部通信なしで利用できる。
+モジュールはNotebookのグローバル変数には依存せず、必要なデータはすべて引数で受け取る。
+
+通常のNotebook運用では、GitHubやBODIK・地理院タイル・Leaflet・OpenStreetMap等への外部通信は、Google Colabでの
+処理実行時に発生する。生成済みの `sheltermatch_review.zip` は、必要な素材を同梱しているため外部通信なしで
+利用できる。
 
 ---
 
