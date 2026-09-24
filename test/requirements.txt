@@ -1,0 +1,20 @@
+# 自動テスト（python -m unittest discover -s test）に必要なライブラリ。
+# GitHub Actions（.github/workflows/ci.yml）でも、このファイルからインストールする。
+#
+# テストが読み込むもの:
+#   test_address_conversion.py → pandas
+#   test_road_routes.py        → numpy, pandas, networkx, shapely, pyproj
+#     src/review/road_routes.py    → numpy, pyproj, scipy, shapely
+#     src/review/review_builder.py → geopandas, matplotlib, numpy, pandas, requests, pillow, shapely
+#
+# osmnx は入れない（テストは実際の道路データを取得せず、架空の道路網とモックで確認するため）。
+numpy
+pandas
+scipy
+networkx
+shapely
+pyproj
+geopandas
+matplotlib
+requests
+pillow
