@@ -68,7 +68,21 @@
     font-size: 11px; color: var(--muted); background: var(--panel);
     padding: 3px 10px; border-top: 1px solid var(--border);
   }
-  #detail { border-top: 1px solid var(--border); background: var(--panel); padding: 10px 12px; max-height: 42%; overflow-y: auto; }
+  /* 候補詳細は、上段（要支援者の概要と「候補詳細をたたむ」ボタン。スクロールしない）と、下段（経路情報・
+     候補表。この部分だけスクロール）に分ける。候補表を下までスクロールしてもボタンが隠れないようにするため */
+  #detail {
+    border-top: 1px solid var(--border); background: var(--panel); max-height: 42%;
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  #detail-body { overflow-y: auto; min-height: 0; padding: 0 12px 10px; }
+  /* 要支援者の概要と「候補詳細をたたむ」ボタンは同じ行に置き、ボタンのための行を増やさない */
+  .detail-head { display: flex; align-items: flex-start; gap: 10px; flex: none; padding: 10px 12px 0; }
+  .detail-head #selected-summary { flex: 1; min-width: 0; }
+  #detail-toggle { flex: none; font-size: 12px; padding: 3px 8px; }
+  #detail.collapsed #detail-body { display: none; }
+  #detail.collapsed .detail-head { padding-bottom: 8px; }
+  #detail.collapsed #selected-summary { margin-bottom: 0; }
+  .status-warn { color: #8a4b08; font-weight: 600; }
   #selected-summary { margin-bottom: 8px; line-height: 1.6; }
   #selected-summary .title { font-size: 15px; font-weight: 600; }
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -99,7 +113,13 @@
   #candidates th:nth-child(2), #candidates td:nth-child(2) { min-width: 8em; }
   tbody tr { cursor: pointer; }
   tbody tr:hover { background: #f2f6fb; }
+  /* 選択中の候補は、背景色に加えて左端の太線・太字・「選択中」の文字でも示す（色だけに頼らない） */
   tbody tr.active { background: #e3edf9; }
+  tbody tr.active td:first-child { box-shadow: inset 4px 0 0 var(--accent); font-weight: 700; }
+  .selected-label {
+    display: inline-block; margin-left: 4px; padding: 0 4px; font-size: 11px; font-weight: 700;
+    border: 1px solid var(--accent); border-radius: 3px; color: var(--accent); background: #fff;
+  }
   .rank-chip {
     display: inline-block; width: 20px; height: 20px; line-height: 20px; text-align: center;
     border-radius: 50%; color: #fff; font-weight: 700; font-size: 12px;
@@ -115,6 +135,12 @@
     box-shadow: 0 0 0 1px rgba(0,0,0,.4); color: #fff; font-weight: 700; font-size: 12px;
     line-height: 18px; text-align: center;
   }
+  /* 選択中の候補のマーカーは、ほかの候補より大きくし、黒い外枠を付ける（色以外でも区別できるように） */
+  .marker-pin.selected {
+    width: 30px; height: 30px; line-height: 26px; font-size: 15px;
+    box-shadow: 0 0 0 3px #111, 0 1px 4px rgba(0,0,0,.5);
+  }
+  .leaflet-tooltip.selected-candidate-label { font-weight: 700; border: 2px solid #111; }
   /* 道路に沿った参考経路（任意）。直線（破線）と道路経路（実線）、地点と道路の接続（点線）を
      線種で見分けられるようにする。凡例はサイドバーに置き、地図の表示領域は変えない。 */
   .route-legend { display: flex; flex-direction: column; gap: 2px; font-size: 12px; margin-top: 6px; }
@@ -122,9 +148,11 @@
   .route-legend .line.straight { border-top: 3px dashed #555; }
   .route-legend .line.road { border-top: 5px solid #555; }
   .route-legend .line.connector { border-top: 2px dotted #374151; }
+  /* 選択中の候補の経路情報は、候補表をスクロールしても見えるよう上端に固定する */
   #route-info {
     font-size: 13px; line-height: 1.5; margin-bottom: 8px; padding: 4px 8px;
     border-left: 3px solid var(--accent); background: #f3f7fc;
+    position: sticky; top: 0; z-index: 1;
   }
   #route-info.warn { border-left-color: var(--warn-border); background: var(--warn-bg); color: #8a4b08; }
   #route-info .route-distance { font-weight: 700; }
@@ -135,9 +163,8 @@
   <header>
     <h1>避難所候補レビュー（sheltermatch）</h1>
     <div class="notice">
-      避難所候補は<strong>距離による候補であり、最終的な割り当てではありません</strong>。
-      表示している線は<strong>本人と避難所を結ぶ直線であり、避難経路を示すものではありません</strong>。
-      最終的な避難先は職員が判断してください。
+      避難所候補は<strong>直線距離による候補であり、最終的な割り当てではありません</strong>。最終的な避難先は職員が判断してください。
+      <span id="line-notice">地図の線は<strong>本人と避難所を結ぶ直線であり、避難経路を示すものではありません</strong>。</span>
       <span id="route-notice"></span>
       <span id="generated-at"></span>
     </div>
@@ -177,7 +204,6 @@
           <div><span class="line road"></span>道路に沿った参考経路</div>
           <div><span class="line connector"></span>地点と道路の接続（道路ではない）</div>
         </div>
-        <div class="map-note" id="route-note"></div>
         <div class="map-note" id="basemap-note"></div>
         <div class="map-note" id="view-bounds"></div>
       </div>
@@ -196,9 +222,14 @@
       <div id="map-fallback"></div>
       <div id="map-attribution"></div>
       <div id="detail">
-        <div id="selected-summary"></div>
-        <div id="route-info" hidden></div>
-        <div id="candidates"></div>
+        <div class="detail-head">
+          <div id="selected-summary"></div>
+          <button id="detail-toggle" type="button" aria-expanded="true" aria-controls="detail-body">候補詳細をたたむ</button>
+        </div>
+        <div id="detail-body">
+          <div id="route-info" hidden></div>
+          <div id="candidates"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -469,15 +500,32 @@
     if (selected && selected.scrollIntoView) { selected.scrollIntoView({ block: "nearest" }); }
   }
 
+  // ---- 位置情報の状態（match_status）の表示 ----
+  // 内部の状態名（ok / no_coordinates / invalid_coordinates）は職員向けの言葉に置き換える。
+  // ok は表示しない。想定外の値は正常扱いにせず、確認が必要であることを示す。
+  function coordinateStatus(resident) {
+    var status = resident.match_status;
+    if (status === "ok") { return null; }
+    if (status === "no_coordinates") {
+      return { badge: "座標なし", text: "座標がありません。元データの住所・緯度経度を確認してください。" };
+    }
+    if (status === "invalid_coordinates") {
+      return { badge: "座標を確認",
+               text: "座標を確認してください（緯度・経度が数値として読めないか、範囲外です）。" };
+    }
+    return { badge: "要確認", text: "位置情報の状態を確認してください（状態: " + status + "）。" };
+  }
+
   function createResultItem(index) {
     var resident = RESIDENTS[index];
     var item = createElement("li", index === selectedIndex ? "selected" : "");
     item.dataset.index = String(index);
     var rid = createElement("div", "rid");
     setText(rid, resident.resident_id);
-    if (!resident.has_coordinates) {
+    var listStatus = coordinateStatus(resident);
+    if (listStatus || !resident.has_coordinates) {
       var badge = createElement("span", "badge");
-      setText(badge, "座標なし");
+      setText(badge, listStatus ? listStatus.badge : "座標なし");
       rid.appendChild(badge);
     }
     var addr = createElement("div", "addr");
@@ -530,6 +578,7 @@
     if (featureLayer) { featureLayer.clearLayers(); }
 
     if (selectedIndex < 0) {
+      lastViewPoints = null;
       el("route-info").hidden = true;
       setText(summary, "要支援者を選択してください。");
       return;
@@ -545,9 +594,15 @@
     summary.appendChild(title);
     summary.appendChild(addr);
 
-    var status = createElement("div");
-    setText(status, "match_status: " + resident.match_status);
-    summary.appendChild(status);
+    // 座標が使えない場合は、状態と「候補が算出されていない」ことをこの1行にまとめる
+    // （経路情報欄・候補表の欄で同じことを繰り返さない）
+    var coordinate = coordinateStatus(resident);
+    if (coordinate || !resident.has_coordinates) {
+      var status = createElement("div", "status-warn");
+      setText(status, (coordinate ? coordinate.text : "")
+        + (resident.has_coordinates ? "" : "地図に表示できる座標が無いため、避難所候補は算出されていません。"));
+      summary.appendChild(status);
+    }
 
     if (resident.resident_in_hazard !== null && resident.resident_in_hazard !== undefined) {
       var hazard = createElement("div", resident.resident_in_hazard ? "hazard-yes" : "hazard-no");
@@ -558,33 +613,35 @@
       summary.appendChild(hazard);
     }
 
-    if (!resident.has_coordinates) {
-      var noCoord = createElement("div", "empty");
-      setText(noCoord, "地図表示できる座標がありません（" + resident.match_status + "）。候補も算出されていません。");
-      summary.appendChild(noCoord);
-    }
-
     renderCandidateTable(resident);
     renderRouteInfo(resident);
     drawResident(resident);
   }
 
   // ---- 道路に沿った参考経路（任意） ----
-  // 初期表示は従来どおり直線だけ。候補表の行を選ぶと、その候補の経路を表示する。
+  // 要支援者を選ぶと候補1を選択状態にして、その経路を表示する（候補表の行で切り替える）。
   // 経路が無い候補には直線を代わりに見せることはせず、「経路を算出できません」と表示する。
+  //
+  // 常に伝える注意は画面上部にまとめる（候補は最終的な割り当てではない／道路経路は安全な避難経路では
+  // ない）。道路経路がある場合、直線の意味は凡例で示すため、上部の直線の説明は出さない。
+  // 道路経路を作成できなかった場合は、その旨も上部に1回だけ示す。
   function initRouteControls() {
     if (!ROUTES) { return; }
+    var notice = el("route-notice");
     if (ROUTES_OK) {
-      setText(el("route-notice"),
-        "「道路に沿った参考経路」は、道路データ（OpenStreetMap）上の最短の経路を参考として示すもので、"
-        + "通行できるか・安全かは確認していません。");
+      el("line-notice").hidden = true;
+      notice.appendChild(document.createTextNode("「道路に沿った参考経路」は"));
+      var strong = document.createElement("strong");
+      setText(strong, "道路データ（OpenStreetMap）上の最短の経路の参考であり、通行できるか・安全かを確認した避難経路ではありません");
+      notice.appendChild(strong);
+      notice.appendChild(document.createTextNode("。"));
       el("route-toggle-label").hidden = false;
       el("route-legend").hidden = false;
       return;
     }
-    var note = el("route-note");
-    note.className = "map-note warn";
-    setText(note, routeFailedText());
+    var failed = document.createElement("strong");
+    setText(failed, routeFailedText());
+    notice.appendChild(failed);
   }
 
   function routeFailedText() {
@@ -620,15 +677,12 @@
     var box = el("route-info");
     box.textContent = "";
     box.className = "";
-    if (!ROUTES) { box.hidden = true; return; }
+    // 道路経路を作成しない設定・作成できなかった場合は出さない（作成できなかったことは上部に表示済み）
+    if (!ROUTES_OK) { box.hidden = true; return; }
     box.hidden = false;
-    if (!ROUTES_OK) {
-      box.className = "warn";
-      setText(box, routeFailedText());
-      return;
-    }
+    // 候補が無い場合は、その旨を候補表の欄（座標が無い場合は概要）で示すため、経路情報欄は出さない
     if (!resident.has_coordinates || !resident.candidates.length) {
-      setText(box, "避難所候補が無いため、道路に沿った参考経路もありません。");
+      box.hidden = true;
       return;
     }
     // 候補がある場合は要支援者を選んだ時点で候補1を選択するため、通常はここを通らない（念のための案内）
@@ -646,7 +700,7 @@
       return;
     }
     if (!el("route-toggle").checked) {
-      setText(box, head + "「道路に沿った参考経路」の表示はオフです（左の「地図の表示」で切り替えられます）。");
+      setText(box, head + "道路に沿った参考経路の表示はオフです（左の「地図の表示」で切り替えられます）。");
       return;
     }
     box.appendChild(document.createTextNode(head + "道路に沿った参考経路 "));
@@ -654,10 +708,10 @@
     setText(distance, "道路上 " + route.road_distance_m + " m");
     box.appendChild(distance);
     box.appendChild(document.createTextNode(
-      (route.road_distance_m < 1 ? "（本人側と避難所側が道路上の同じ地点に接続しています）" : "")
-      + "（本人側・避難所側それぞれの道路への接続点の間の距離。道路までの接続部分 本人側 "
-      + route.resident_connection_m + " m・避難所側 " + route.shelter_connection_m
-      + " m は含みません）　直線距離 " + candidate.distance_m + " m"));
+      (route.road_distance_m < 1 ? "（本人側と避難所側が道路上の同じ地点に接続）" : "")
+      + "（道路への接続点の間。点線の接続部分 本人側 " + route.resident_connection_m
+      + " m・避難所側 " + route.shelter_connection_m + " m は含みません）／直線距離 "
+      + candidate.distance_m + " m"));
   }
 
   // ---- ハザード区分の表示 ----
@@ -779,6 +833,7 @@
   function renderCandidateTable(resident) {
     var container = el("candidates");
     if (!resident.candidates.length) {
+      if (!resident.has_coordinates) { return; }  // 概要で「候補は算出されていません」と表示済み
       var empty = createElement("div", "empty");
       setText(empty, "避難所候補はありません。");
       container.appendChild(empty);
@@ -812,6 +867,11 @@
       var rankLabel = document.createElement("span");
       setText(rankLabel, " 候補" + candidate.rank);
       rankCell.appendChild(rankLabel);
+      if (activeRank === candidate.rank) {
+        var selectedLabel = createElement("span", "selected-label");
+        setText(selectedLabel, "選択中");
+        rankCell.appendChild(selectedLabel);
+      }
       row.appendChild(rankCell);
 
       var nameCell = document.createElement("td");
@@ -841,14 +901,14 @@
     table.appendChild(tbody);
     container.appendChild(table);
 
+    // 表の列の意味だけをここで説明する（安全性に関する全体の注意は画面上部にまとめている）
     var note = createElement("div", "count");
     setText(note,
-      "距離と「本人と避難所の間のハザード区域」は、本人と避難所を結ぶ直線上の参考情報です"
-      + "（道路距離・避難経路ではありません）。順位はハザード情報では変わりません。"
+      "直線距離と「本人と避難所の間のハザード区域（参考）」は、本人と避難所を結ぶ直線についての参考情報です"
       + (ROUTES_OK
-        ? "「本人と避難所の間のハザード区域（参考）」は直線についての判定で、道路に沿った参考経路に"
-          + "ついての判定ではありません（道路経路とハザード区域の重なりは判定していません）。"
-        : ""));
+        ? "（道路に沿った参考経路についての判定ではありません）。"
+        : "（道路距離・避難経路ではありません）。")
+      + "順位はハザード情報では変わりません。");
     container.appendChild(note);
   }
 
@@ -861,8 +921,7 @@
     L.polyline(path, {
       className: "road-route-line", color: color, weight: 5, opacity: 1
     }).addTo(featureLayer).bindTooltip(textTooltip(
-      "候補" + candidate.rank + ": 道路に沿った参考経路（道路上 " + route.road_distance_m
-      + " m）。通行できるか・安全かは確認していません"));
+      "候補" + candidate.rank + "の道路に沿った参考経路（道路上 " + route.road_distance_m + " m）"));
     var connectors = [
       [[resident.latitude, resident.longitude], path[0], "本人の地点", route.resident_connection_m],
       [path[path.length - 1], [candidate.latitude, candidate.longitude], "避難所の地点",
@@ -878,17 +937,26 @@
   }
 
   // ---- 地図描画（選択した1人だけ） ----
+  // 道路経路がある場合に候補を選んでいるときは、その候補を中心に地図を寄せる（本人の地点・選択中の
+  // 避難所・道路経路・接続部分）。ほかの候補のマーカーと直線は残すが、表示範囲の計算には含めない
+  // （遠い候補のために地図が引いてしまわないようにするため）。道路経路を作成しない設定などでは、
+  // 従来どおり候補全体が入る範囲にする。拡大しすぎないよう、寄せるときもズーム17までにする。
+  var FOCUS_MAX_ZOOM = 17;
+  var lastViewPoints = null;
+
   function drawResident(resident) {
     if (!map || !featureLayer) { return; }
     featureLayer.clearLayers();
+    lastViewPoints = null;
     if (!resident.has_coordinates) { return; }
 
     var residentLatLng = [resident.latitude, resident.longitude];
-    var points = [residentLatLng];
+    var allPoints = [residentLatLng];
+    var focusPoints = null;
 
     resident.candidates.forEach(function (candidate) {
       var candidateLatLng = [candidate.latitude, candidate.longitude];
-      points.push(candidateLatLng);
+      allPoints.push(candidateLatLng);
       var color = RANK_COLORS[candidate.rank - 1] || "#555";
       var emphasised = activeRank === candidate.rank;
       var route = candidate.road_route;
@@ -903,37 +971,65 @@
       }).addTo(featureLayer).bindTooltip(
         textTooltip("候補" + candidate.rank + "への直線（避難経路ではありません）"));
 
+      if (emphasised && ROUTES_OK) {
+        // 経路を表示しない場合（算出できない・表示オフ）は、本人の地点と選択中の避難所が入る範囲
+        focusPoints = [residentLatLng, candidateLatLng];
+      }
       if (drawRoute) {
-        points = points.concat(route.path);
+        allPoints = allPoints.concat(route.path);
+        focusPoints = focusPoints.concat(route.path);
         drawRoadRoute(resident, candidate, route, color);
       }
 
-      L.marker(candidateLatLng, {
+      // 選択中の候補は、マーカーを大きく・黒い外枠付きにし、「候補N 避難所名」を常に表示する
+      var size = emphasised ? 30 : 22;
+      var marker = L.marker(candidateLatLng, {
         icon: L.divIcon({
           className: "",
           // ここで組み立てるのは候補番号（このNotebookが振る整数）と配色だけで、
           // 利用者データは入れない
-          html: '<div class="marker-pin" style="background:' + color + ';">' + candidate.rank + '</div>',
-          iconSize: [22, 22],
-          iconAnchor: [11, 11]
+          html: '<div class="marker-pin' + (emphasised ? " selected" : "") + '" style="background:'
+            + color + ';">' + candidate.rank + '</div>',
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2]
         }),
-        opacity: activeRank && !emphasised ? 0.5 : 1
-      }).addTo(featureLayer).bindTooltip(
-        textTooltip("候補" + candidate.rank + ": " + candidate.name));
+        opacity: activeRank && !emphasised ? 0.5 : 1,
+        zIndexOffset: emphasised ? 1000 : 0
+      }).addTo(featureLayer);
+      marker.bindTooltip(textTooltip("候補" + candidate.rank + " " + candidate.name), emphasised
+        ? { permanent: true, direction: "top", offset: [0, -16], className: "selected-candidate-label" }
+        : {});
     });
 
     L.circleMarker(residentLatLng, {
+      className: "resident-marker",
       radius: 9, color: "#fff", weight: 2, fillColor: RESIDENT_COLOR, fillOpacity: 1
     }).addTo(featureLayer).bindTooltip(textTooltip("要支援者地点"));
 
+    lastViewPoints = focusPoints || allPoints;
+    fitView();
+  }
+
+  function fitView() {
+    if (!map || !lastViewPoints) { return; }
     try {
-      // 候補詳細の高さが変わると地図の表示サイズも変わるため、
+      // 候補詳細の高さ（折りたたみ）で地図の大きさが変わるため、
       // 収める範囲を計算する前にLeafletへ現在の大きさを取り直させる
       map.invalidateSize({ animate: false });
-      map.fitBounds(L.latLngBounds(points).pad(0.25));
+      map.fitBounds(L.latLngBounds(lastViewPoints).pad(0.25), { maxZoom: FOCUS_MAX_ZOOM });
     } catch (error) {
-      map.setView(residentLatLng, 15);
+      map.setView(lastViewPoints[0], 15);
     }
+  }
+
+  // ---- 候補詳細の折りたたみ ----
+  // 道路経路情報・候補表・表の注意書きをまとめて隠し、地図を広く使えるようにする（初期状態は表示）。
+  function setDetailCollapsed(collapsed) {
+    el("detail").classList.toggle("collapsed", collapsed);
+    var button = el("detail-toggle");
+    setText(button, collapsed ? "候補詳細を表示" : "候補詳細をたたむ");
+    button.setAttribute("aria-expanded", String(!collapsed));
+    fitView();
   }
 
   // ---- 起動 ----
@@ -951,6 +1047,9 @@
     if (selectedIndex < 0) { return; }
     renderRouteInfo(RESIDENTS[selectedIndex]);
     drawResident(RESIDENTS[selectedIndex]);
+  });
+  el("detail-toggle").addEventListener("click", function () {
+    setDetailCollapsed(!el("detail").classList.contains("collapsed"));
   });
   el("layers-all").addEventListener("click", function () { setAllLayers(true); });
   el("layers-none").addEventListener("click", function () { setAllLayers(false); });
