@@ -337,6 +337,14 @@ class ReviewBuilderRouteTest(unittest.TestCase):
         self.assertNotIn("rank", route)
         self.rb.verify_review_data(data, final_df, 1)
 
+    def test_hazard_checked_follows_result_columns(self):
+        # ハザード判定の列が結果CSVにある（判定を実施した）ときだけ True。画面の絞り込みの表示に使う
+        final_df, rows, _ = self.sample()
+        self.assertFalse(self.rb.build_review_data(final_df, rows, [], {}, 1, [])["hazard_checked"])
+        final_df["resident_in_hazard"] = [False, np.nan]
+        final_df["resident_hazard_types"] = ["", np.nan]
+        self.assertTrue(self.rb.build_review_data(final_df, rows, [], {}, 1, [])["hazard_checked"])
+
     def test_routes_off_keeps_previous_data_shape(self):
         final_df, rows, _ = self.sample()
         data = self.rb.build_review_data(final_df, rows, [], {}, 1, [])

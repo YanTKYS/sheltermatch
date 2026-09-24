@@ -113,7 +113,7 @@ def check_selected_marker(page, rank, name=None):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("zip")
-    parser.add_argument("--mode", choices=["on", "off", "failed"], required=True)
+    parser.add_argument("--mode", choices=["on", "off", "failed", "plain"], required=True)
     parser.add_argument("--shots", default=None)
     parser.add_argument("--report", default=None)
     parser.add_argument("--height", type=int, default=800, help="画面の高さ（幅は1366）")
@@ -162,14 +162,23 @@ def main():
         attribution = page.inner_text("#map-attribution")
         check("出典: 国土地理院（背景地図）を表示", "背景地図: 国土地理院" in attribution, attribution)
 
-        if args.mode == "on":
-            check_on(page, shots, attribution)
-        elif args.mode == "off":
-            check_off(page, shots, attribution)
+        if args.mode == "plain":
+            # 確認用の要支援者（C01〜C09）以外のデータ（多数件・ハザード判定なし等）での絞り込みの確認
+            check_filters(page)
         else:
-            check_failed(page, shots, attribution)
-
-        check_common(page)
+            if args.mode == "on":
+                check_on(page, shots, attribution)
+            elif args.mode == "off":
+                check_off(page, shots, attribution)
+            else:
+                check_failed(page, shots, attribution)
+            routes_on = args.mode == "on"
+            check_distances(page, routes_on)
+            check_overview(page, routes_on)
+            check_filters(page)
+            check_zero_reset(page)
+            check_keyboard(page, routes_on)
+            check_common(page)
         check("外部への通信が発生していない（file:// 以外は0件）", not blocked, ", ".join(blocked[:5]))
         check("JavaScriptのエラーが無い", not console_errors, " / ".join(console_errors[:5]))
         browser.close()
@@ -489,6 +498,332 @@ def check_common(page):
     check("地図を拡大できる（表示範囲が変わる）", before != after_zoom, f"{before} → {after_zoom}")
     check("地図をドラッグで移動できる（表示範囲が変わる）", after_zoom != after_drag, after_drag)
     check_collapse(page, SHOTS)
+
+# =============================================================================
+# 候補の距離比較・全候補を表示・一覧の絞り込み・キーボード操作（2026-09-24 追加分）
+# =============================================================================
+
+def review_data(page):
+    """review.html に埋め込まれたデータ（画面の元データ）を読む。期待値の計算に使う。"""
+    return json.loads(page.evaluate("document.getElementById('review-data').textContent"))
+
+
+def format_distance(meters):
+    """画面と同じ規則の距離表示（1000m以上は小数2桁のkm、未満は整数のm）。"""
+    return f"{meters / 1000:.2f} km" if meters >= 1000 else f"{int(meters + 0.5)} m"
+
+
+def select_by_id(page, resident_id):
+    select_resident(page, resident_id)
+
+
+def check_distances(page, routes_on):
+    """候補表の距離欄: 直線と道路上を2段で比較できる／経路なしは「算出不可」／順位は直線距離のまま。"""
+    data = {r["resident_id"]: r for r in review_data(page)["residents"]}
+    header = None
+    for resident_id in (["C01", "C02", "C04"] if routes_on else ["C01"]):
+        select_by_id(page, resident_id)
+        header = header or page.inner_text("#candidates thead th:nth-child(3)")
+        resident = data[resident_id]
+        cells = [page.inner_text(f'#candidates tbody tr[data-rank="{c["rank"]}"] td:nth-child(3)')
+                 for c in resident["candidates"]]
+        expected = []
+        for candidate in resident["candidates"]:
+            straight = format_distance(candidate["distance_m"])
+            if not routes_on:
+                expected.append(straight)
+                continue
+            route = candidate["road_route"]
+            road = format_distance(route["road_distance_m"]) if route["status"] == "ok" else "算出不可"
+            expected.append(f"直線{straight}\n道路上{road}")
+        normalized = [c.replace(" ", "").replace("\u00a0", "") for c in cells]
+        check(f"距離欄（{resident_id}）: " + ("候補1〜3の直線距離と道路上の距離（または算出不可）を2段で比較できる"
+                                          if routes_on else "直線距離だけを表示（道路距離は出さない）"),
+              normalized == [e.replace(" ", "") for e in expected]
+              and (routes_on or all("道路" not in c for c in cells)),
+              f"{cells}")
+        ranks = [int(r) for r in page.eval_on_selector_all(
+            "#candidates tbody tr", "rows => rows.map(r => r.dataset.rank)")]
+        distances = [c["distance_m"] for c in resident["candidates"]]
+        check(f"候補順位（{resident_id}）は直線距離の順のまま（道路上の距離では並べ替えない）",
+              ranks == [c["rank"] for c in resident["candidates"]] == sorted(ranks)
+              and distances == sorted(distances), f"順位{ranks} 直線{distances}")
+    check("距離欄の見出し", header == ("距離" if routes_on else "直線距離"), header)
+    if routes_on:
+        # 道路上の距離の順が直線距離の順と異なる人がいても、表の順位は直線距離のまま
+        swapped = [rid for rid, r in data.items()
+                   if [c["road_route"].get("road_distance_m") for c in r["candidates"]
+                       if c.get("road_route", {}).get("status") == "ok"]
+                   != sorted(c["road_route"].get("road_distance_m") for c in r["candidates"]
+                             if c.get("road_route", {}).get("status") == "ok")]
+        print(f"     （参考）道路上の距離の順が直線距離の順と異なる要支援者: {swapped}")
+
+
+def all_markers_inside(page):
+    return page.evaluate("""() => {
+      const map = document.querySelector('#map').getBoundingClientRect();
+      const nodes = [...document.querySelectorAll('.marker-pin, .resident-marker')];
+      return nodes.length > 0 && nodes.every(n => { const x = n.getBoundingClientRect();
+        const cx = (x.left + x.right) / 2, cy = (x.top + x.bottom) / 2;
+        return cx >= map.left && cx <= map.right && cy >= map.top && cy <= map.bottom; });
+    }""")
+
+
+def check_overview(page, routes_on):
+    """「全候補を表示」: 本人＋候補1〜3が地図に収まり、選択・経路はそのまま。次の選択で再び寄せる。"""
+    select_by_id(page, "C03")
+    if not routes_on:
+        click_rank(page, 1)
+    rank = active_rank(page)
+    routes_before = count(page, "path.road-route-line")
+    page.click("#show-all-candidates")
+    page.wait_for_timeout(SETTLE_MS)
+    check("「全候補を表示」で本人の地点と候補1〜3の避難所が地図に収まる",
+          all_markers_inside(page) and count(page, ".marker-pin") == 3)
+    check("「全候補を表示」後も候補の選択と道路経路の表示はそのまま",
+          active_rank(page) == rank and count(page, "path.road-route-line") == routes_before
+          and count(page, ".marker-pin.selected") == (1 if rank else 0),
+          f"選択 {rank}→{active_rank(page)} / 経路 {routes_before}→{count(page, 'path.road-route-line')}")
+    if SHOTS:
+        page.screenshot(path=str(SHOTS / "08_show_all_candidates.png"))
+    click_rank(page, 2)
+    if routes_on:
+        check_focus(page, "「全候補を表示」の後に候補2を選択")
+    else:
+        check("「全候補を表示」の後も候補を選べる（道路経路機能OFF）", active_rank(page) == "2")
+    select_by_id(page, "C05")
+    check("座標が無い要支援者では「全候補を表示」を押せない", page.is_disabled("#show-all-candidates"))
+
+
+def listed_ids(page):
+    data = review_data(page)["residents"]
+    indexes = page.eval_on_selector_all("#results li", "items => items.map(i => Number(i.dataset.index))")
+    return [data[i]["resident_id"] for i in indexes]
+
+
+def expected_ids(data, names, query=""):
+    tests = {
+        "filter-coordinates": lambda r: r["match_status"] != "ok",
+        "filter-hazard": lambda r: r.get("resident_in_hazard") is True or any(
+            c.get("shelter_in_hazard") is True or c.get("straight_line_intersects_hazard") is True
+            for c in r["candidates"]),
+        "filter-route": lambda r: any((c.get("road_route") or {}).get("status") != "ok" for c in r["candidates"]),
+    }
+    q = query.lower()
+    return [r["resident_id"] for r in data["residents"]
+            if all(tests[n](r) for n in names)
+            and (not q or q in str(r["resident_id"]).lower() or q in str(r.get("address") or "").lower())]
+
+
+def set_filters(page, names, query=""):
+    for name in ("filter-coordinates", "filter-hazard", "filter-route"):
+        if page.is_visible(f"#{name}"):
+            page.set_checked(f"#{name}", name in names)
+    select_resident(page, query)
+
+
+def check_filters(page):
+    """一覧の絞り込み: 事実ごとの条件・AND条件・0件・解除。"""
+    data = review_data(page)
+    total = len(data["residents"])
+    routes_ok = (data.get("road_routes") or {}).get("status") == "ok"
+    hazard = bool(data.get("hazard_checked"))
+    check("絞り込みの表示: 「座標を確認」は常に、「ハザード該当あり」はハザード判定の実施時、"
+          "「道路経路算出不可あり」は道路経路の作成時だけ",
+          page.is_visible("#filter-coordinates") and page.is_visible("#filter-hazard") == hazard
+          and page.is_visible("#filter-route") == routes_ok,
+          f"ハザード判定{hazard} 道路経路{routes_ok}")
+    check("絞り込みの名前は事実名だけ（総合的な評価の名前を使わない）",
+          all(word not in page.inner_text("#filters") for word in ("要確認", "危険", "安全", "優先", "リスク")),
+          page.inner_text("#filters"))
+
+    available = ["filter-coordinates"] + (["filter-hazard"] if hazard else []) + (["filter-route"] if routes_ok else [])
+    for name in available:
+        set_filters(page, [name])
+        expected = expected_ids(data, [name])
+        shown = listed_ids(page)
+        check(f"絞り込み「{page.inner_text(f'label:has(#{name})')}」だけ: 該当する要支援者だけを表示",
+              page.inner_text("#count") == f"該当 {len(expected)}件 / 全 {total}件"
+              and shown == expected[:50], f"期待{len(expected)}件 表示{page.inner_text('#count')}")
+        if shown:
+            check(f"「{name}」: 選択中の要支援者は絞り込み後の先頭",
+                  page.inner_text("#selected-summary .title") == expected[0])
+
+    if len(available) >= 2:
+        names = available[-2:]
+        expected = expected_ids(data, names)
+        set_filters(page, names)
+        check(f"複数の絞り込み（{'・'.join(names)}）はAND条件", listed_ids(page) == expected[:50]
+              and page.inner_text("#count").startswith(f"該当 {len(expected)}件"), f"{len(expected)}件")
+
+    # 文字検索とのAND: 条件に当てはまる人のIDで検索すると1件、当てはまらない人のIDでは0件
+    name = available[-1]
+    matching = expected_ids(data, [name])
+    others = [r["resident_id"] for r in data["residents"] if r["resident_id"] not in matching]
+    if matching:
+        set_filters(page, [name], matching[0])
+        check("絞り込みと文字検索はAND条件（当てはまる人のIDで検索）",
+              listed_ids(page) == expected_ids(data, [name], matching[0]))
+    if others:
+        set_filters(page, [name], others[0])
+        zero = expected_ids(data, [name], others[0])
+        check("絞り込みと文字検索はAND条件（当てはまらない人のIDで検索）", listed_ids(page) == zero)
+        if not zero:
+            check("0件のときは「該当 0件」とし、前の要支援者の情報・地図表示を残さない",
+                  page.inner_text("#count") == f"該当 0件 / 全 {total}件"
+                  and "該当する要支援者はいません" in page.inner_text("#selected-summary")
+                  and count(page, ".marker-pin") == 0 and count(page, ".resident-marker") == 0
+                  and count(page, "path.straight-line") == 0 and count(page, "path.road-route-line") == 0
+                  and not page.is_visible("#route-info") and not page.inner_text("#candidates").strip()
+                  and page.is_disabled("#show-all-candidates") and page.inner_text("#position") == ""
+                  and page.is_disabled("#next") and page.is_disabled("#prev"),
+                  page.inner_text("#selected-summary"))
+            if SHOTS:
+                page.screenshot(path=str(SHOTS / "09_filter_zero.png"))
+
+    set_filters(page, [])
+    check("絞り込みと検索を解除すると全件に戻る",
+          page.inner_text("#count") == f"該当 {total}件 / 全 {total}件"
+          and count(page, ".resident-marker") <= 1)
+
+
+def view_bounds(page):
+    """「表示範囲 緯度 a〜b / 経度 c〜d」の表示から (south, north, west, east) を読む。"""
+    text = page.inner_text("#view-bounds")
+    lat = text.split("緯度 ")[1].split(" /")[0].split("〜")
+    lon = text.split("経度 ")[1].split("（")[0].split("〜")
+    return float(lat[0]), float(lat[1]), float(lon[0]), float(lon[1])
+
+
+def hazard_state(page):
+    """表示中のハザード区域の画像の数と、チェックが入っているハザード区域の数。"""
+    return (count(page, ".leaflet-hazard-pane img.leaflet-image-layer"),
+            count(page, "#layers input:checked"))
+
+
+def check_zero_reset(page):
+    """0件になったとき、直前の要支援者に合わせた地図表示（ハザード区域・表示位置）を残さないこと。
+    解除すると、再び選ばれた要支援者に必要な表示へ戻ること。"""
+    data = review_data(page)
+    set_filters(page, [])
+    page.locator("#results li", has_text="C01").click()
+    page.wait_for_timeout(SETTLE_MS)
+    c01 = next(r for r in data["residents"] if r["resident_id"] == "C01")
+    shown_before, checked_before = hazard_state(page)
+    before = view_bounds(page)
+    check("（前提）ハザード区域が表示される要支援者（C01）を選んだ状態",
+          bool(c01["hazard_groups"]) and shown_before >= 1 and checked_before >= 1
+          and count(page, ".resident-marker") == 1, f"ハザード画像{shown_before} チェック{checked_before}")
+
+    # C01 を選んだまま直接0件にする（先に検索で C01 だけにし、次に「座標を確認」を入れる。C01 は座標が
+    # 正常なので0件になる）。途中で別の要支援者が選ばれると、その人の表示に切り替わってしまい確認にならない
+    select_resident(page, "C01")
+    page.set_checked("#filter-coordinates", True)
+    page.wait_for_timeout(SETTLE_MS)
+    shown, checked = hazard_state(page)
+    after = view_bounds(page)
+    south, west = data["basemap"]["bounds"][0]
+    north, east = data["basemap"]["bounds"][1]
+    covers_basemap = (after[0] <= south + 1e-4 and after[1] >= north - 1e-4
+                      and after[2] <= west + 1e-4 and after[3] >= east - 1e-4)
+    check("0件にすると、要支援者・候補・直線・道路経路を表示しない",
+          page.inner_text("#count").startswith("該当 0件")
+          and count(page, ".resident-marker") == 0 and count(page, ".marker-pin") == 0
+          and count(page, "path.straight-line") == 0 and count(page, "path.road-route-line") == 0
+          and count(page, "path.road-route-connector") == 0)
+    check("0件にすると、ハザード区域の表示とチェックも外れる", shown == 0 and checked == 0,
+          f"ハザード画像{shown} チェック{checked}")
+    check("0件にすると、地図は直前の要支援者の位置ではなく全体（背景地図の範囲）を表示",
+          after != before and covers_basemap, f"{before} → {after}")
+    check("0件のとき「全候補を表示」・前へ・次へは押せない",
+          page.is_disabled("#show-all-candidates") and page.is_disabled("#prev") and page.is_disabled("#next"))
+    if SHOTS:
+        page.screenshot(path=str(SHOTS / "10_zero_reset.png"))
+
+    set_filters(page, [])
+    shown, checked = hazard_state(page)
+    first = data["residents"][0]
+    check("絞り込みを解除すると、先頭の要支援者・候補・必要なハザード区域が再び表示される",
+          page.inner_text("#selected-summary .title") == first["resident_id"]
+          and count(page, ".resident-marker") == 1 and count(page, ".marker-pin") == len(first["candidates"])
+          and shown == len(first["hazard_groups"]) and checked == len(first["hazard_groups"])
+          and not page.is_disabled("#show-all-candidates"),
+          f"{page.inner_text('#selected-summary .title')} ハザード画像{shown} チェック{checked}")
+
+
+def focused_rank(page):
+    return page.evaluate("(() => { const e = document.activeElement;"
+                         " return e && e.matches('#candidates tbody tr') ? e.dataset.rank : null; })()")
+
+
+def aria_consistent(page):
+    return page.evaluate("""() => {
+      const rows = [...document.querySelectorAll('#candidates tbody tr')];
+      return rows.length > 0 && rows.every(r =>
+        r.tabIndex === 0
+        && r.getAttribute('aria-selected') === String(r.classList.contains('active'))
+        && (r.getAttribute('aria-current') === 'true') === r.classList.contains('active'));
+    }""")
+
+
+def check_keyboard(page, routes_on):
+    """候補表のキーボード操作: Tabで行へ移動し、Enter / Space で候補を選ぶ（クリックと同じ処理）。"""
+    select_by_id(page, "C01")
+    page.focus("#detail-toggle")
+    page.keyboard.press("Tab")
+    first = focused_rank(page)
+    outline = page.evaluate("getComputedStyle(document.activeElement).outlineStyle")
+    page.keyboard.press("Tab")
+    second = focused_rank(page)
+    check("Tabで候補行へ順に移動でき、フォーカス中の行に枠が表示される",
+          first == "1" and second == "2" and outline not in ("none", ""), f"{first}→{second} 枠={outline}")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(SETTLE_MS)
+    check("Enterでフォーカス中の候補（候補2）を選択し、フォーカスはその行に残る",
+          active_rank(page) == "2" and focused_rank(page) == "2" and aria_consistent(page))
+    if routes_on:
+        check("Enterでの選択で道路経路・地図の寄せ・選択表示も切り替わる",
+              count(page, "path.road-route-line") == 1)
+        check_selected_marker(page, 2)
+        check_focus(page, "Enterで候補2を選択")
+    page.keyboard.press("Tab")
+    scroll_before = page.evaluate("window.scrollY")
+    page.keyboard.press(" ")
+    page.wait_for_timeout(SETTLE_MS)
+    check("Spaceでフォーカス中の候補（候補3）を選択し、画面はスクロールしない",
+          active_rank(page) == "3" and focused_rank(page) == "3" and aria_consistent(page)
+          and page.evaluate("window.scrollY") == scroll_before)
+    if routes_on:
+        check_selected_marker(page, 3)
+        check_focus(page, "Spaceで候補3を選択")
+    page.keyboard.press("Shift+Tab")
+    check("Shift+Tabで前の候補行へ戻れる", focused_rank(page) == "2")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(SETTLE_MS)
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(SETTLE_MS)
+    check("選択中の行でもう一度Enterを押したときもクリックと同じ動作"
+          + ("（選択を保つ）" if routes_on else "（選択を外す）"),
+          active_rank(page) == ("2" if routes_on else None) and aria_consistent(page))
+    click_rank(page, 1)
+    check("マウスクリックでの候補選択も従来どおり（aria-selected も一致）",
+          active_rank(page) == "1" and aria_consistent(page))
+    # 候補詳細の折りたたみと併用: たたむと候補行へは移動しない／再表示するとキーボードで選べる
+    page.click("#detail-toggle")
+    page.wait_for_timeout(SETTLE_MS)
+    page.focus("#detail-toggle")
+    page.keyboard.press("Tab")
+    hidden_focus = focused_rank(page)
+    page.click("#detail-toggle")
+    page.wait_for_timeout(SETTLE_MS)
+    page.focus("#detail-toggle")
+    page.keyboard.press("Tab")
+    page.keyboard.press("Tab")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(SETTLE_MS)
+    check("候補詳細の折りたたみと併用しても壊れない（たたんだ間は候補行へ移らず、再表示後はEnterで選べる）",
+          hidden_focus is None and active_rank(page) == "2" and aria_consistent(page))
+
 
 if __name__ == "__main__":
     main()

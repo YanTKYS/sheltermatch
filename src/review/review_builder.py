@@ -476,6 +476,9 @@ def build_review_data(final_df, review_rows, hazard_layers, basemap, top_n, disa
         # 避難所データにある災害種別の全一覧。画面で対応／条件付き／非対応を区別するために使う。
         "disaster_types": disaster_types,
         "hazard_layers": hazard_layers,
+        # ハザード判定を実施したか（実施したときだけ結果CSVにハザード判定の列が作られる）。
+        # レビュー画面の「ハザード該当あり」の絞り込みを出すかどうかに使う。
+        "hazard_checked": "resident_in_hazard" in final_df.columns,
         "basemap": basemap,
         "basemap_attribution": GSI_ATTRIBUTION_TEXT,
         # 道路に沿った参考経路の全体の状態（作成しない設定ならNone）。候補ごとの経路は residents 側。

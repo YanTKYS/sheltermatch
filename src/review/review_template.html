@@ -39,6 +39,9 @@
   h2 { font-size: 13px; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
   input[type="search"] { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 14px; }
   .count { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 6px; font-size: 12px; }
+  .filters label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+  .filters .filter-count { color: var(--muted); }
   ul.results { list-style: none; margin: 0; padding: 0; }
   ul.results li {
     padding: 6px 8px; border-radius: 4px; cursor: pointer; border: 1px solid transparent;
@@ -110,6 +113,15 @@
   #candidates th:nth-child(1), #candidates td:nth-child(1),
   #candidates th:nth-child(3), #candidates td:nth-child(3) { white-space: nowrap; width: 1%; }
   #candidates td:nth-child(3) { text-align: right; }
+  /* 距離欄: 直線距離と道路上の距離をセル内の2段で並べる（列は増やさない） */
+  .distance-line { display: block; }
+  .distance-line .distance-kind { color: var(--muted); font-size: 11px; margin-right: 4px; }
+  .distance-line.unavailable { color: var(--muted); }
+  /* キーボードで候補行を選んでいるとき、どの行にいるかが分かるようにする（選択中の表示とは別の色） */
+  #candidates tbody tr:focus-visible { outline: 3px solid #d97706; outline-offset: -3px; }
+  .overview-control button {
+    border: none; border-radius: 4px; padding: 5px 8px; font-size: 12px; background: #fff;
+  }
   #candidates th:nth-child(2), #candidates td:nth-child(2) { min-width: 8em; }
   tbody tr { cursor: pointer; }
   tbody tr:hover { background: #f2f6fb; }
@@ -174,6 +186,12 @@
       <div class="section">
         <h2>要支援者を検索</h2>
         <input type="search" id="search" placeholder="resident_id または 住所で絞り込み" autocomplete="off">
+        <!-- 既存データの事実だけによる絞り込み（複数選ぶと、検索とあわせてすべてに当てはまる人を表示） -->
+        <div class="filters" id="filters" role="group" aria-label="一覧の絞り込み">
+          <label><input type="checkbox" id="filter-coordinates"> <span>座標を確認</span></label>
+          <label id="filter-hazard-label" hidden><input type="checkbox" id="filter-hazard"> <span>ハザード該当あり</span></label>
+          <label id="filter-route-label" hidden><input type="checkbox" id="filter-route"> <span>道路経路算出不可あり</span></label>
+        </div>
         <div class="count" id="count"></div>
       </div>
       <div class="section grow">
@@ -296,6 +314,9 @@
   // 分からなくなる（背景地図は最大でもズーム15相当の画像のため、18より先は拡大しても細部は増えない）。
   var MIN_ZOOM = 10;
   var MAX_ZOOM = 18;
+  // 起動直後（要支援者を選ぶ前）の表示位置
+  var INITIAL_CENTER = [26.125, 127.68];
+  var INITIAL_ZOOM = 13;
 
   function initMap() {
     if (typeof L === "undefined") {
@@ -308,7 +329,7 @@
         "検索・候補一覧はこのまま利用できます。");
       return;
     }
-    map = L.map("map", { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM }).setView([26.125, 127.68], 13);
+    map = L.map("map", { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM }).setView(INITIAL_CENTER, INITIAL_ZOOM);
     map.createPane("basemapPane").style.zIndex = 200;
     map.createPane("hazardPane").style.zIndex = 300;
     featureLayer = L.layerGroup().addTo(map);
@@ -455,14 +476,64 @@
   // ---- 検索・一覧 ----
   function normalize(value) { return (value == null ? "" : String(value)).toLowerCase(); }
 
+  // ---- 一覧の絞り込み（既存データの事実だけを使う。独自の評価・優先度は付けない） ----
+  // 座標を確認        : match_status が ok 以外（no_coordinates・invalid_coordinates・想定外の値）
+  // ハザード該当あり  : 本人の地点・候補避難所の地点・本人と避難所を結ぶ直線の、既存のハザード判定の
+  //                     いずれかが true（ハザード判定を実施した場合だけ表示）
+  // 道路経路算出不可あり: 候補1〜TOP_Nのうち1件以上で、道路に沿った参考経路が算出できていない
+  //                     （道路経路を作成した場合だけ表示）
+  // 複数選んだ場合と文字検索は、すべてに当てはまる人（AND）を表示する。
+  var FILTERS = [
+    { id: "filter-coordinates", available: function () { return true; },
+      test: function (resident) { return resident.match_status !== "ok"; } },
+    { id: "filter-hazard", label: "filter-hazard-label",
+      available: function () { return Boolean(DATA.hazard_checked); },
+      test: function (resident) {
+        return resident.resident_in_hazard === true || resident.candidates.some(function (candidate) {
+          return candidate.shelter_in_hazard === true || candidate.straight_line_intersects_hazard === true;
+        });
+      } },
+    { id: "filter-route", label: "filter-route-label",
+      available: function () { return ROUTES_OK; },
+      test: function (resident) {
+        return resident.candidates.some(function (candidate) {
+          return !candidate.road_route || candidate.road_route.status !== "ok";
+        });
+      } }
+  ];
+
+  // 使える絞り込みだけを表示し、それぞれに当てはまる人数を添える（何件あるかが事前に分かるように）
+  function initFilters() {
+    FILTERS.forEach(function (filter) {
+      var input = el(filter.id);
+      if (!filter.available()) {
+        input.checked = false;
+        return;
+      }
+      if (filter.label) { el(filter.label).hidden = false; }
+      var total = 0;
+      RESIDENTS.forEach(function (resident) { if (filter.test(resident)) { total += 1; } });
+      var number = createElement("span", "filter-count");
+      setText(number, "(" + total + ")");
+      input.parentNode.appendChild(number);
+      input.addEventListener("change", applyFilter);
+    });
+  }
+
+  function activeFilters() {
+    return FILTERS.filter(function (filter) { return filter.available() && el(filter.id).checked; });
+  }
+
   function applyFilter() {
     var query = normalize(el("search").value).trim();
+    var filters = activeFilters();
     filtered = [];
     for (var i = 0; i < RESIDENTS.length; i += 1) {
       var resident = RESIDENTS[i];
-      if (!query
+      var matchesQuery = !query
         || normalize(resident.resident_id).indexOf(query) >= 0
-        || normalize(resident.address).indexOf(query) >= 0) {
+        || normalize(resident.address).indexOf(query) >= 0;
+      if (matchesQuery && filters.every(function (filter) { return filter.test(resident); })) {
         filtered.push(i);
       }
     }
@@ -494,7 +565,7 @@
     setText(el("more-note"),
       filtered.length > RESULT_LIMIT
         ? "該当" + filtered.length + "件のうち " + (range.start + 1) + "〜" + range.end
-          + "件目を表示しています（検索で絞り込めます）。"
+          + "件目を表示しています（検索・絞り込みで対象を減らせます）。"
         : "");
     var selected = list.querySelector("li.selected");
     if (selected && selected.scrollIntoView) { selected.scrollIntoView({ block: "nearest" }); }
@@ -577,15 +648,24 @@
     candidates.textContent = "";
     if (featureLayer) { featureLayer.clearLayers(); }
 
+    updateOverviewButton(null);
     if (selectedIndex < 0) {
+      // 該当する要支援者がいない（検索・絞り込みで0件）場合は、直前の要支援者に合わせた表示を残さない。
+      // 要支援者・候補・直線・道路経路（上で消去済み）に加えて、ハザード区域の表示（チェックも）を外し、
+      // 地図を全体が見える位置へ戻す。再び誰かを選べば、その人に必要なハザード区域の表示に戻る。
       lastViewPoints = null;
+      setAllLayers(false);
+      resetMapView();
       el("route-info").hidden = true;
-      setText(summary, "要支援者を選択してください。");
+      setText(summary, RESIDENTS.length && !filtered.length
+        ? "検索・絞り込みの条件に該当する要支援者はいません。"
+        : "要支援者を選択してください。");
       return;
     }
 
     var resident = RESIDENTS[selectedIndex];
     applyRelevantLayers(resident);
+    updateOverviewButton(resident);
 
     var title = createElement("div", "title");
     setText(title, resident.resident_id);
@@ -830,6 +910,61 @@
     return cell;
   }
 
+  // ---- 候補の選択（マウスのクリックとキーボードの Enter / Space で共通の処理） ----
+  // 道路経路がある場合は、常にどれか1つの候補を選んだ状態にする（選択中の行を押しても外さない）。
+  // それ以外は従来どおり、選択中の行をもう一度押すと選択を外す。
+  // 候補表は描き直すため、操作した行にフォーカスがあった場合は、描き直した同じ候補の行へ戻す。
+  function selectCandidate(resident, rank) {
+    var focused = document.activeElement;
+    var keepFocus = focused && focused.closest && focused.closest("#candidates tbody tr") !== null;
+    activeRank = !ROUTES_OK && activeRank === rank ? null : rank;
+    el("candidates").textContent = "";
+    renderCandidateTable(resident);
+    renderRouteInfo(resident);
+    drawResident(resident);
+    if (keepFocus) {
+      var row = document.querySelector('#candidates tbody tr[data-rank="' + rank + '"]');
+      if (row) { row.focus({ preventScroll: true }); }
+    }
+  }
+
+  // ---- 距離欄 ----
+  // 表示の単位だけを読みやすくする（1000m以上は km）。データの値は変えない。
+  function formatDistance(meters) {
+    if (meters == null) { return ""; }
+    return meters >= 1000 ? (meters / 1000).toFixed(2) + " km" : Math.round(meters) + " m";
+  }
+
+  function distanceLine(kind, text, className) {
+    var line = createElement("span", "distance-line" + (className ? " " + className : ""));
+    if (kind) {
+      var label = createElement("span", "distance-kind");
+      setText(label, kind);
+      line.appendChild(label);
+    }
+    line.appendChild(document.createTextNode(text));
+    return line;
+  }
+
+  // 道路経路がある場合は「直線」と「道路上」を2段で並べ、候補1〜3を見比べられるようにする。
+  // 道路上の距離が無い候補は「算出不可」とし、直線距離で代用しない（安全・危険の評価ではない）。
+  // 順位は従来どおり直線距離によるもので、道路上の距離では並べ替えない。
+  function distanceCell(candidate) {
+    var cell = document.createElement("td");
+    if (!ROUTES_OK) {
+      setText(cell, formatDistance(candidate.distance_m));
+      return cell;
+    }
+    cell.appendChild(distanceLine("直線", formatDistance(candidate.distance_m)));
+    var route = candidate.road_route;
+    if (route && route.status === "ok") {
+      cell.appendChild(distanceLine("道路上", formatDistance(route.road_distance_m)));
+    } else {
+      cell.appendChild(distanceLine("道路上", "算出不可", "unavailable"));
+    }
+    return cell;
+  }
+
   function renderCandidateTable(resident) {
     var container = el("candidates");
     if (!resident.candidates.length) {
@@ -843,7 +978,7 @@
     var table = document.createElement("table");
     var thead = document.createElement("thead");
     var headRow = document.createElement("tr");
-    ["順位", "避難所名", "直線距離", "避難所地点のハザード", "災害種別対応",
+    ["順位", "避難所名", ROUTES_OK ? "距離" : "直線距離", "避難所地点のハザード", "災害種別対応",
      "本人と避難所の間のハザード区域（参考）"]
       .forEach(function (name) {
         var th = document.createElement("th");
@@ -857,7 +992,13 @@
     resident.candidates.forEach(function (candidate) {
       var row = document.createElement("tr");
       row.dataset.rank = String(candidate.rank);
-      if (activeRank === candidate.rank) { row.className = "active"; }
+      // キーボードでも候補を選べるよう、行をTabで移動できるようにし、選択状態を支援技術にも伝える
+      row.tabIndex = 0;
+      row.setAttribute("aria-selected", String(activeRank === candidate.rank));
+      if (activeRank === candidate.rank) {
+        row.className = "active";
+        row.setAttribute("aria-current", "true");
+      }
 
       var rankCell = document.createElement("td");
       var chip = createElement("span", "rank-chip");
@@ -878,23 +1019,19 @@
       setText(nameCell, candidate.name);
       row.appendChild(nameCell);
 
-      var distanceCell = document.createElement("td");
-      setText(distanceCell, candidate.distance_m == null ? "" : candidate.distance_m + " m");
-      row.appendChild(distanceCell);
+      row.appendChild(distanceCell(candidate));
 
       row.appendChild(hazardCell(candidate.shelter_in_hazard, candidate.shelter_hazard_types));
       row.appendChild(disasterSupportCell(candidate));
       row.appendChild(hazardCell(candidate.straight_line_intersects_hazard,
                                  candidate.straight_line_hazard_types));
 
-      row.addEventListener("click", function () {
-        // 道路経路がある場合は、常にどれか1つの候補を選んだ状態にする（選択中の行を押しても外さない）。
-        // それ以外は従来どおり、選択中の行をもう一度押すと選択を外す。
-        activeRank = !ROUTES_OK && activeRank === candidate.rank ? null : candidate.rank;
-        el("candidates").textContent = "";
-        renderCandidateTable(resident);
-        renderRouteInfo(resident);
-        drawResident(resident);
+      row.addEventListener("click", function () { selectCandidate(resident, candidate.rank); });
+      row.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+          event.preventDefault();  // Space で画面がスクロールしないようにする
+          selectCandidate(resident, candidate.rank);
+        }
       });
       tbody.appendChild(row);
     });
@@ -906,9 +1043,9 @@
     setText(note,
       "直線距離と「本人と避難所の間のハザード区域（参考）」は、本人と避難所を結ぶ直線についての参考情報です"
       + (ROUTES_OK
-        ? "（道路に沿った参考経路についての判定ではありません）。"
+        ? "（道路に沿った参考経路についての判定ではありません）。「道路上」は道路への接続点の間の距離です。"
         : "（道路距離・避難経路ではありません）。")
-      + "順位はハザード情報では変わりません。");
+      + "順位は直線距離によるもので、道路上の距離やハザード情報では変わりません。");
     container.appendChild(note);
   }
 
@@ -1010,6 +1147,18 @@
     fitView();
   }
 
+  // 地図を全体が見える位置へ戻す。背景地図の範囲（要支援者・避難所の全体を覆う範囲）を使い、
+  // 背景地図の情報が無い場合は起動直後の表示位置にする。
+  function resetMapView() {
+    if (!map) { return; }
+    map.invalidateSize({ animate: false });
+    if (BASEMAP && BASEMAP.bounds) {
+      map.fitBounds(BASEMAP.bounds);
+    } else {
+      map.setView(INITIAL_CENTER, INITIAL_ZOOM);
+    }
+  }
+
   function fitView() {
     if (!map || !lastViewPoints) { return; }
     try {
@@ -1020,6 +1169,44 @@
     } catch (error) {
       map.setView(lastViewPoints[0], 15);
     }
+  }
+
+  // ---- 全候補を表示 ----
+  // 本人の地点と候補1〜TOP_Nの避難所が入る範囲へ地図を戻す（本人と全候補の位置関係の確認用）。
+  // 候補の選択・道路経路の表示はそのまま。次に候補表の行を選ぶと、再びその候補へ地図を寄せる。
+  var overviewButton = null;
+
+  function initOverviewControl() {
+    if (!map) { return; }
+    var OverviewControl = L.Control.extend({
+      options: { position: "topleft" },
+      onAdd: function () {
+        var container = L.DomUtil.create("div", "leaflet-bar leaflet-control overview-control");
+        overviewButton = L.DomUtil.create("button", "", container);
+        overviewButton.type = "button";
+        overviewButton.id = "show-all-candidates";
+        setText(overviewButton, "全候補を表示");
+        overviewButton.title = "本人の地点と候補避難所がすべて入る範囲を表示します";
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.on(overviewButton, "click", showAllCandidates);
+        return container;
+      }
+    });
+    new OverviewControl().addTo(map);
+  }
+
+  function updateOverviewButton(resident) {
+    if (!overviewButton) { return; }
+    overviewButton.disabled = !resident || !resident.has_coordinates || !resident.candidates.length;
+  }
+
+  function showAllCandidates() {
+    if (selectedIndex < 0) { return; }
+    var resident = RESIDENTS[selectedIndex];
+    if (!resident.has_coordinates || !resident.candidates.length) { return; }
+    lastViewPoints = [[resident.latitude, resident.longitude]].concat(
+      resident.candidates.map(function (candidate) { return [candidate.latitude, candidate.longitude]; }));
+    fitView();
   }
 
   // ---- 候補詳細の折りたたみ ----
@@ -1035,7 +1222,9 @@
   // ---- 起動 ----
   setText(el("generated-at"), DATA.generated_at ? "（作成: " + DATA.generated_at + "）" : "");
   initMap();
+  initOverviewControl();
   initRouteControls();
+  initFilters();
   renderLayerControls();
   el("search").addEventListener("input", applyFilter);
   el("prev").addEventListener("click", function () { step(-1); });
