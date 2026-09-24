@@ -344,7 +344,7 @@ Notebookが「利用者が上から順に実行する手順」として読める
 
 **住所→座標変換（`address_geocode.ipynb`）**
 
-`experiments/address_conversion_test_input.csv`（架空の8件）で6件 `matched`・1件 `town_not_found`・1件
+`experiments/address_conversion_test_input.csv`（確認用の住所8件。要支援者の情報は含まない）で6件 `matched`・1件 `town_not_found`・1件
 `blank_address` となり、通常表記・都道府県省略・全角数字・「番地」表記省略のいずれも同じ地番・座標へ一致する
 ことを確認済み。
 
