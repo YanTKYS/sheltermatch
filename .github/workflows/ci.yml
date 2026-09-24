@@ -48,12 +48,11 @@ jobs:
       # skip が1件でもあれば失敗にする（必要なテストが実行されなかったことに気付けるようにする）。
       - name: 自動テスト
         env:
+          # Actions の env は大文字・小文字を区別しないため、大文字だけで指定する
+          # （Python の requests / urllib は大文字の変数も読む）
           HTTP_PROXY: http://127.0.0.1:9
           HTTPS_PROXY: http://127.0.0.1:9
-          http_proxy: http://127.0.0.1:9
-          https_proxy: http://127.0.0.1:9
           NO_PROXY: ""
-          no_proxy: ""
           MPLBACKEND: Agg
         run: |
           set -o pipefail
