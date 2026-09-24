@@ -314,6 +314,9 @@
   // 分からなくなる（背景地図は最大でもズーム15相当の画像のため、18より先は拡大しても細部は増えない）。
   var MIN_ZOOM = 10;
   var MAX_ZOOM = 18;
+  // 起動直後（要支援者を選ぶ前）の表示位置
+  var INITIAL_CENTER = [26.125, 127.68];
+  var INITIAL_ZOOM = 13;
 
   function initMap() {
     if (typeof L === "undefined") {
@@ -326,7 +329,7 @@
         "検索・候補一覧はこのまま利用できます。");
       return;
     }
-    map = L.map("map", { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM }).setView([26.125, 127.68], 13);
+    map = L.map("map", { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM }).setView(INITIAL_CENTER, INITIAL_ZOOM);
     map.createPane("basemapPane").style.zIndex = 200;
     map.createPane("hazardPane").style.zIndex = 300;
     featureLayer = L.layerGroup().addTo(map);
@@ -647,7 +650,12 @@
 
     updateOverviewButton(null);
     if (selectedIndex < 0) {
+      // 該当する要支援者がいない（検索・絞り込みで0件）場合は、直前の要支援者に合わせた表示を残さない。
+      // 要支援者・候補・直線・道路経路（上で消去済み）に加えて、ハザード区域の表示（チェックも）を外し、
+      // 地図を全体が見える位置へ戻す。再び誰かを選べば、その人に必要なハザード区域の表示に戻る。
       lastViewPoints = null;
+      setAllLayers(false);
+      resetMapView();
       el("route-info").hidden = true;
       setText(summary, RESIDENTS.length && !filtered.length
         ? "検索・絞り込みの条件に該当する要支援者はいません。"
@@ -1137,6 +1145,18 @@
 
     lastViewPoints = focusPoints || allPoints;
     fitView();
+  }
+
+  // 地図を全体が見える位置へ戻す。背景地図の範囲（要支援者・避難所の全体を覆う範囲）を使い、
+  // 背景地図の情報が無い場合は起動直後の表示位置にする。
+  function resetMapView() {
+    if (!map) { return; }
+    map.invalidateSize({ animate: false });
+    if (BASEMAP && BASEMAP.bounds) {
+      map.fitBounds(BASEMAP.bounds);
+    } else {
+      map.setView(INITIAL_CENTER, INITIAL_ZOOM);
+    }
   }
 
   function fitView() {

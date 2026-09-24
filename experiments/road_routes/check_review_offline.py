@@ -176,6 +176,7 @@ def main():
             check_distances(page, routes_on)
             check_overview(page, routes_on)
             check_filters(page)
+            check_zero_reset(page)
             check_keyboard(page, routes_on)
             check_common(page)
         check("外部への通信が発生していない（file:// 以外は0件）", not blocked, ", ".join(blocked[:5]))
@@ -684,6 +685,70 @@ def check_filters(page):
     check("絞り込みと検索を解除すると全件に戻る",
           page.inner_text("#count") == f"該当 {total}件 / 全 {total}件"
           and count(page, ".resident-marker") <= 1)
+
+
+def view_bounds(page):
+    """「表示範囲 緯度 a〜b / 経度 c〜d」の表示から (south, north, west, east) を読む。"""
+    text = page.inner_text("#view-bounds")
+    lat = text.split("緯度 ")[1].split(" /")[0].split("〜")
+    lon = text.split("経度 ")[1].split("（")[0].split("〜")
+    return float(lat[0]), float(lat[1]), float(lon[0]), float(lon[1])
+
+
+def hazard_state(page):
+    """表示中のハザード区域の画像の数と、チェックが入っているハザード区域の数。"""
+    return (count(page, ".leaflet-hazard-pane img.leaflet-image-layer"),
+            count(page, "#layers input:checked"))
+
+
+def check_zero_reset(page):
+    """0件になったとき、直前の要支援者に合わせた地図表示（ハザード区域・表示位置）を残さないこと。
+    解除すると、再び選ばれた要支援者に必要な表示へ戻ること。"""
+    data = review_data(page)
+    set_filters(page, [])
+    page.locator("#results li", has_text="C01").click()
+    page.wait_for_timeout(SETTLE_MS)
+    c01 = next(r for r in data["residents"] if r["resident_id"] == "C01")
+    shown_before, checked_before = hazard_state(page)
+    before = view_bounds(page)
+    check("（前提）ハザード区域が表示される要支援者（C01）を選んだ状態",
+          bool(c01["hazard_groups"]) and shown_before >= 1 and checked_before >= 1
+          and count(page, ".resident-marker") == 1, f"ハザード画像{shown_before} チェック{checked_before}")
+
+    # C01 を選んだまま直接0件にする（先に検索で C01 だけにし、次に「座標を確認」を入れる。C01 は座標が
+    # 正常なので0件になる）。途中で別の要支援者が選ばれると、その人の表示に切り替わってしまい確認にならない
+    select_resident(page, "C01")
+    page.set_checked("#filter-coordinates", True)
+    page.wait_for_timeout(SETTLE_MS)
+    shown, checked = hazard_state(page)
+    after = view_bounds(page)
+    south, west = data["basemap"]["bounds"][0]
+    north, east = data["basemap"]["bounds"][1]
+    covers_basemap = (after[0] <= south + 1e-4 and after[1] >= north - 1e-4
+                      and after[2] <= west + 1e-4 and after[3] >= east - 1e-4)
+    check("0件にすると、要支援者・候補・直線・道路経路を表示しない",
+          page.inner_text("#count").startswith("該当 0件")
+          and count(page, ".resident-marker") == 0 and count(page, ".marker-pin") == 0
+          and count(page, "path.straight-line") == 0 and count(page, "path.road-route-line") == 0
+          and count(page, "path.road-route-connector") == 0)
+    check("0件にすると、ハザード区域の表示とチェックも外れる", shown == 0 and checked == 0,
+          f"ハザード画像{shown} チェック{checked}")
+    check("0件にすると、地図は直前の要支援者の位置ではなく全体（背景地図の範囲）を表示",
+          after != before and covers_basemap, f"{before} → {after}")
+    check("0件のとき「全候補を表示」・前へ・次へは押せない",
+          page.is_disabled("#show-all-candidates") and page.is_disabled("#prev") and page.is_disabled("#next"))
+    if SHOTS:
+        page.screenshot(path=str(SHOTS / "10_zero_reset.png"))
+
+    set_filters(page, [])
+    shown, checked = hazard_state(page)
+    first = data["residents"][0]
+    check("絞り込みを解除すると、先頭の要支援者・候補・必要なハザード区域が再び表示される",
+          page.inner_text("#selected-summary .title") == first["resident_id"]
+          and count(page, ".resident-marker") == 1 and count(page, ".marker-pin") == len(first["candidates"])
+          and shown == len(first["hazard_groups"]) and checked == len(first["hazard_groups"])
+          and not page.is_disabled("#show-all-candidates"),
+          f"{page.inner_text('#selected-summary .title')} ハザード画像{shown} チェック{checked}")
 
 
 def focused_rank(page):
