@@ -21,8 +21,16 @@
 ## 自動テスト
 
 ```bash
+python3 -m pip install -r test/requirements.txt   # 初回のみ
 python3 -m unittest discover -s test
 ```
+
+`main` 向けの Pull Request と `main` への push では、GitHub Actions（`.github/workflows/ci.yml`）でも
+同じテストを実行し、結果を Pull Request の Checks で確認できる。CI では依存ライブラリが揃っていることを
+確認したうえで、外部へ接続できない状態でテストを実行し、skip が1件でもあれば失敗とする。
+
+実際の Google Colab での実行、OpenStreetMap の道路データ取得、公式ハザードデータ、実ブラウザでの
+レビュー画面の確認（`experiments/road_routes/`）は CI の対象外で、従来どおり実機確認として行う。
 
 `test_address_conversion.py` は、`address_geocode.ipynb` の住所変換ロジックをNotebookのセルから
 そのまま読み込んで実行する回帰テスト。ABRマスターは公式データをコミットできないため、実データと
@@ -40,6 +48,7 @@ python3 -m unittest discover -s test
 
 * `test_address_conversion.py`: 住所変換の回帰テスト(上記「自動テスト」を参照)。
 * `test_road_routes.py`: 道路に沿った参考経路の回帰テスト(上記「自動テスト」を参照)。
+* `requirements.txt`: 自動テストに必要なライブラリ（GitHub Actions でも使用）。
 * `residents_sample_enriched.csv`: 回帰確認用の架空要支援者CSV。共通住民CSVの5列
   (`resident_id,address,latitude,longitude,geocode_status`) に、確認内容を書いた `note` 列を
   追加したもの。`note` のような追加列は、`sheltermatch.ipynb` がそのまま結果CSVへ引き継ぐ。
