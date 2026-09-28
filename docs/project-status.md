@@ -1,6 +1,6 @@
 # sheltermatch 現状整理・開発方針
 
-更新日: 2026-09-24
+更新日: 2026-09-28
 
 ## 1. この文書の目的
 
@@ -461,4 +461,5 @@ Notebookが「利用者が上から順に実行する手順」として読める
 | [docs/operation-check.md](./operation-check.md) | 操作導線・エラー処理の確認記録 |
 | [docs/performance-test.md](./performance-test.md) | 処理時間の確認記録 |
 | [docs/bugfix-2026-09-21.md](./bugfix-2026-09-21.md) / [09-22](./bugfix-2026-09-22.md) / [09-23](./bugfix-2026-09-23.md) | 通常業務で支障となる不具合の修正記録 |
+| [docs/pre-production-check-2026-09-28.md](./pre-production-check-2026-09-28.md) | 実データ投入前の事前確認（サンドボックスでの確認結果と対応案。判断が必要な事項を含む。Colabでの通し確認は未実施） |
 | [test/README.md](../test/README.md) | 自動テスト・CIと実機確認の分担 |
