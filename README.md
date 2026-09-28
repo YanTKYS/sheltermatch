@@ -226,4 +226,5 @@ Notebook 全体の通し確認は Google Colab 上で行います。過去の確
 | [docs/operation-check.md](docs/operation-check.md) | 操作導線・エラー処理の確認記録 |
 | [docs/performance-test.md](docs/performance-test.md) | 処理時間の確認記録 |
 | [docs/road-routes-check.md](docs/road-routes-check.md) | 道路に沿った参考経路の確認記録 |
+| [docs/pre-production-check-2026-09-28.md](docs/pre-production-check-2026-09-28.md) | 実データ投入前の最終確認（見つかった事項と対応案） |
 | [CHANGELOG.md](CHANGELOG.md) | 変更履歴 |
