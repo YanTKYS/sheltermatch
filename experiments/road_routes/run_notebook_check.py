@@ -7,6 +7,7 @@ Google Colab を使えない環境で、Notebook本体（src/ 配下のモジュ
     google.colab.files       アップロード＝指定したファイルを渡す / ダウンロード＝記録のみ
     %pip 行                  実行しない（必要なライブラリはあらかじめ導入しておく）
     GitHub raw（src/）       --code で指定した版（作業ツリー、または git の参照）のファイルを返す
+                             （Notebook の取得先の版 SHELTERMATCH_CODE_REF によらない）
     BODIK Data API           架空の避難所データ（CKAN datastore_search 形式）を返す
     unpkg（Leaflet 1.9.4）   npm レジストリの公式パッケージ（leaflet-1.9.4.tgz）の中身を返す
                              （SHA-256 の照合は review_builder がそのまま行う）
@@ -163,7 +164,8 @@ class Network:
 
     def get(self, url, params=None, timeout=None, **kwargs):
         self.log.append({"url": url, "params": params})
-        match = re.match(r"https://raw\.githubusercontent\.com/YanTKYS/sheltermatch/main/src/(.+)$", url)
+        # Notebook が指定する版（SHELTERMATCH_CODE_REF。例: v1.0.0）によらず、--code で指定した版の src/ を返す
+        match = re.match(r"https://raw\.githubusercontent\.com/YanTKYS/sheltermatch/[^/]+/src/(.+)$", url)
         if match:
             data = self.src_files.get(match.group(1))
             return FakeResponse(data or b"", 200 if data is not None else 404)

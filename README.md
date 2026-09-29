@@ -186,14 +186,18 @@ assigned_shelters.csv / sheltermatch_review.zip
 | `experiments/` | 方式検証の記録と、性能確認用の架空データ（`road_routes/` は道路経路の確認手順） |
 | `docs/` | データ取得手順・現状整理などの詳細ドキュメント |
 
-`sheltermatch.ipynb` は、Google Colab での実行時に `src/` 配下のファイルを GitHub の `main` から
-取得して読み込みます。Notebook には職員が行う操作だけを残し、実装の詳細は通常のPython / HTMLファイル
-として保守しています（外部への通信が発生するのは成果物を生成するときだけで、できあがった
-`sheltermatch_review.zip` は外部通信なしで利用できます）。
+`sheltermatch.ipynb` は、Google Colab での実行時に `src/` 配下のファイルを GitHub から取得して読み込みます。
+取得するのは実データで動作確認した版（現在は `v1.0.0` タグ）で、実行時に「外部モジュール: v1.0.0」と表示します。
+`main` へ変更が入っても、取得する版を更新するまで実行されるコードは変わりません（版の更新方法は
+[docs/project-status.md](docs/project-status.md) の「6.4」）。
+
+Notebook には職員が行う操作だけを残し、実装の詳細は通常のPython / HTMLファイルとして保守しています
+（外部への通信が発生するのは成果物を生成するときだけで、できあがった `sheltermatch_review.zip` は外部通信なしで
+利用できます）。
 
 ## テスト
 
-住所変換と道路経路の回帰テストを用意しています。
+住所変換・道路経路・Notebookの外部モジュールの取得先の回帰テストを用意しています。
 
 ```bash
 python3 -m unittest discover -s test
@@ -207,6 +211,10 @@ python3 -m unittest discover -s test
 架空のABRデータで、住所表記の揺れ（全角／半角、漢数字の丁目、ハイフン類、空白、「字」「大字」の有無、
 `番地`/`番`/`号`/`の` の表記差など）・住居表示住所・方書付き住所が同じ地番・住居・座標に変換されること、
 および別の住所を同一視していないことを確認します。
+
+外部モジュールの取得先のテスト（`test_notebook_module_source.py`）は、`sheltermatch.ipynb` が取得する版が
+`v1.0.0` であること、`src/` の4ファイルが同じ取得元から取得されること、API互換性の確認が働くことを、外部通信なしで
+確認します。
 
 Notebook 全体の通し確認は Google Colab 上で行います。実際の公開データと実際の運用データによる
 住所変換から候補算出・レビューZIP出力までの確認結果は、[docs/project-status.md](docs/project-status.md) の
