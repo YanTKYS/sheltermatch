@@ -10,6 +10,8 @@
 * 変換後のCSVを `sheltermatch.ipynb` へ投入し、避難所候補の算出・ハザード判定・道路に沿った参考経路・
   `assigned_shelters.csv`・`sheltermatch_review.zip` の作成まで、Google Colab で通して確認済み
   （候補1〜3を1,024人分・計3,072件、道路に沿った参考経路3,072件をすべて作成）
+* 通常運用の `sheltermatch.ipynb` は、実行時に取得する外部モジュール（`src/`）を、上記の確認をした `v1.0.0` に
+  固定している（「6.4」）
 * 今後は機能追加よりも、依頼部署からの利用フィードバック・運用上の不具合への対応・公開データ更新時の再確認を
   中心にする（「8. 今後の優先順位」）
 
@@ -316,16 +318,30 @@ Notebookが「利用者が上から順に実行する手順」として読める
 | `src/review/review_template.html` | `review.html` の画面（HTML / CSS / JavaScript） | （テンプレートとして読み込む） | — |
 | `src/review/road_routes.py` | OpenStreetMap道路ネットワークの取込、地点から道路への接続、道路上の最短経路の算出、レビューHTML用の経路データの生成 | `load_road_network()` / `compute_road_routes()` | `ROAD_ROUTES_API_VERSION` = 1 |
 
-`sheltermatch.ipynb` は、Google Colab実行時にこれらのファイルをGitHub（`main`）から取得し、`importlib` で
-モジュールとして読み込む（取得したコードを `exec()` で直接実行はしない）。`hazard_loader.py`・`review_builder.py`・
+`sheltermatch.ipynb` は、Google Colab実行時にこれらのファイルをGitHubの指定した版（現在は `v1.0.0` タグ）から
+取得し、`importlib` でモジュールとして読み込む（取得したコードを `exec()` で直接実行はしない）。`hazard_loader.py`・`review_builder.py`・
 `review_template.html` は「外部モジュール準備」セルで、`road_routes.py` は `ENABLE_ROAD_ROUTES = True` のときだけ
 道路経路のセルで取得する。各モジュールのAPI互換性の値がNotebook側の期待値と一致することを確認してから処理を
 進める（互換性のない組み合わせのまま処理を続けない）。
 
-**版の固定について**: リポジトリには `v1.0.0` タグを作成済みだが、`sheltermatch.ipynb` の取得先
-（`GITHUB_RAW_BASE_URL`）は現在も `main` である。タグがあることと、Notebookが `v1.0.0` のコードを取得して
-実行することは別で、取得先をタグへ固定する対応は未実施（[docs/pre-production-check-2026-09-28.md](./pre-production-check-2026-09-28.md)
-の 4-4）。そのため、`main` へ変更を取り込むと、次に実行したときから新しいコードが使われる。
+**取得する版（外部モジュールの版の固定）**: 通常運用の `sheltermatch.ipynb` は、`src/` を `v1.0.0` タグから
+取得する。「外部モジュール準備」セルの `SHELTERMATCH_CODE_REF = "v1.0.0"` から取得元（`GITHUB_RAW_BASE_URL`）を
+組み立て、上表の4ファイル（`road_routes.py` を含む）をすべてこの1つの取得元から取得する。モジュールごとに別の版は
+持たない。実行時には「外部モジュール: v1.0.0」と取得元のURLを表示し、取得できなかった場合は、取得対象の版・URL・
+通信エラーの内容を表示して止まる。`v1.0.0` は、2026-09-29 に実データで一気通貫の確認をした版である（「7.2」）。
+
+固定したのは、Notebookが実行時に取得する `src/` の版である。`sheltermatch.ipynb` 自体は `main` 上のファイルで、
+今後も `main` で更新され得る。Notebookと取得した `src/` の組み合わせは、上表のAPI互換性の値で確認する（一致
+しなければ止まる）。この対応より前に Google Drive 等へ保存したNotebookのコピーは取得先が `main` のままのため、
+更新後のNotebookを開き直して使う（実行時の「外部モジュール: v1.0.0」の表示で確認できる）。
+
+今後の更新方針:
+
+* `main` へ変更を取り込んでも、それだけでは運用のNotebookが取得する外部モジュールは変わらない
+* 新しい版を運用へ反映するときは、動作確認をしてから、取得する版（`SHELTERMATCH_CODE_REF`）を明示的に更新する
+* 取得する版の更新は、意図したバージョン更新として Pull Request で行う（取得先の回帰テスト
+  `test/test_notebook_module_source.py` の期待値も一緒に更新する）
+* 運用で使っているタグは、付け直したり削除したりしない（取得するコードが変わるため）
 
 モジュールはNotebookのグローバル変数には依存せず、必要なデータはすべて引数で受け取る。
 
@@ -342,7 +358,7 @@ Notebookが「利用者が上から順に実行する手順」として読める
 
 | 確認の種類 | 対象 | 使うデータ |
 | --- | --- | --- |
-| 自動テスト（CI） | 住所変換、道路経路の計算、レビューHTMLへのデータ受け渡し等のロジック | リポジトリ内の架空データ・架空の道路網（外部データを取得しない） |
+| 自動テスト（CI） | 住所変換、道路経路の計算、レビューHTMLへのデータ受け渡し等のロジック、Notebookの外部モジュールの取得先 | リポジトリ内の架空データ・架空の道路網（外部データを取得しない） |
 | 開発環境での検証（`experiments/`） | Notebookのセルの通し実行、`file://` で開いたレビュー画面の自動ブラウザテスト、結果CSVの変更前との比較 | 架空の要支援者・避難所、OSM由来の道路データ（Overture Maps）等 |
 | 実機確認 | Google Colabでの実行、実際のOSM道路取得・BODIK・公式ハザードデータ・ABRデータ、生成したレビュー画面の確認 | 実際の公開データと実際の運用データ（実データはリポジトリへ含めない） |
 
@@ -353,8 +369,8 @@ Notebookが「利用者が上から順に実行する手順」として読める
   で、同じテスト（`python -m unittest discover -s test`）を Python 3.12 で実行する
 * CIでは依存ライブラリが import できることを確認してから、外部へ接続できない状態でテストを実行し、skip が
   1件でもあれば失敗とする。外部の行政区域・道路・ハザード・避難所データは取得しない
-* 2026-09-29時点（PR #46）で、GitHub Actions上で96件（住所変換76件・道路経路20件）が成功し、skip 0件であることを
-  確認済み
+* 2026-09-29時点で、テストは107件（住所変換76件・道路経路20件・Notebookの外部モジュールの取得先11件）。
+  外部へ接続できない状態で、すべて成功し skip 0件であることを確認している
 
 詳細は [test/README.md](../test/README.md) を参照。
 
@@ -454,7 +470,7 @@ assigned_shelters.csv / sheltermatch_review.zip
 * 結果CSV・レビューHTMLが、職員の判断資料として理解しやすいか（依頼部署からの利用フィードバックで確認する）
 * Google Colabでの異常系の操作（ファイル選択のキャンセル、大容量ファイルのアップロード等。開発環境での一次確認は
   [docs/operation-check.md](./operation-check.md)）
-* 事前確認で挙げた未対応の事項（実行コードの版の固定等。[docs/pre-production-check-2026-09-28.md](./pre-production-check-2026-09-28.md)）
+* 事前確認で挙げた未対応の事項（追加列の値の扱い等。[docs/pre-production-check-2026-09-28.md](./pre-production-check-2026-09-28.md)）
 
 ---
 
@@ -467,12 +483,14 @@ assigned_shelters.csv / sheltermatch_review.zip
    * 結果CSV・レビューHTMLが、職員の判断資料として理解しやすいか
 2. **運用上の不具合への対応**
    * 実利用で発生した操作上の問題・通常業務上の不具合の修正
+   * `src/` の修正は、`main` へ取り込むだけでは運用に反映されない。動作確認をしてから、取得する版
+     （`SHELTERMATCH_CODE_REF`）を Pull Request で更新する（「6.4」の今後の更新方針）
 3. **ABR等の公開データ更新時の再確認**
    * ABRデータの更新時は、住所CSVを再変換して件数を前回と比較し、成果物を作り直す（手順は
      [docs/address-data.md](./address-data.md) の「10. データの更新と再変換の手順」）
    * 避難所（BODIK）・ハザード・道路（OpenStreetMap）の各データも、更新を確認した際に成果物を作り直す
 4. **必要になった場合のみ追加改善**
-   * 事前確認で挙げた未対応の事項（実行コードの版の固定、追加列の値の扱い等）は、判断に応じて対応する
+   * 事前確認で挙げた未対応の事項（追加列の値の扱い、誤った座標の警告等）は、判断に応じて対応する
      （[docs/pre-production-check-2026-09-28.md](./pre-production-check-2026-09-28.md)）
    * 追加の性能最適化は、実測して問題があった場合だけ行う（ハザード判定の空間インデックス化は実施済み）
    * 住所変換の未変換を減らす目的で、照合の条件を緩めることはしない

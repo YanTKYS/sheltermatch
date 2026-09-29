@@ -55,10 +55,18 @@ python3 -m unittest discover -s test
 取得範囲の端では経路を作らないこと等を確認する。実際の道路データでの確認は
 [docs/road-routes-check.md](../docs/road-routes-check.md) を参照。
 
+`test_notebook_module_source.py` は、`sheltermatch.ipynb` が Google Colab 実行時に取得する外部モジュール（`src/`）の
+取得先の回帰テスト。取得する版（`SHELTERMATCH_CODE_REF`）が `v1.0.0` であること、`main` の `src/` を取得先に
+使わないこと、`hazard_loader.py`・`review_builder.py`・`review_template.html`・`road_routes.py` が同じ取得元から
+取得されること、API互換性の確認（互換性のないモジュールでは止まる）と取得失敗時の表示を確認する。「外部モジュール
+準備」セルをそのまま実行し、`requests.get` だけを差し替える（外部通信は行わない）。取得する版を更新するときは、
+このテストの期待値も意図した変更として一緒に更新する。
+
 ## ファイル
 
 * `test_address_conversion.py`: 住所変換の回帰テスト(上記「自動テスト」を参照)。
 * `test_road_routes.py`: 道路に沿った参考経路の回帰テスト(上記「自動テスト」を参照)。
+* `test_notebook_module_source.py`: `sheltermatch.ipynb` の外部モジュールの取得先の回帰テスト(上記「自動テスト」を参照)。
 * `requirements.txt`: 自動テストに必要なライブラリ（GitHub Actions でも使用）。
 * `residents_sample_enriched.csv`: 回帰確認用の架空要支援者CSV。共通住民CSVの5列
   (`resident_id,address,latitude,longitude,geocode_status`) に、確認内容を書いた `note` 列を

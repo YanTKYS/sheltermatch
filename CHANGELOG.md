@@ -189,3 +189,17 @@
   現在の対応状況を追記した（実行コードの版の固定は、`v1.0.0` タグは作成済みだが Notebook の取得先をタグへ
   固定する対応は未実施）
 - コード・Notebook・テスト・出力仕様の変更は無い
+
+## 2026-09-29（外部モジュールの版の固定）
+
+詳細: [docs/project-status.md](docs/project-status.md) の「6.4」、[docs/pre-production-check-2026-09-28.md](docs/pre-production-check-2026-09-28.md) の 4-4
+
+### Changed
+
+- Google Colab実行時に取得する外部モジュール（`src/`）を、`main` から運用確認済みの `v1.0.0` へ固定した
+  （`sheltermatch.ipynb` の `SHELTERMATCH_CODE_REF` から取得元を組み立て、`hazard_loader`・`review_builder`・
+  `review_template`・`road_routes` のすべてを同じ版から取得する）
+- 実行時に取得対象のバージョンを確認できるようにした（「外部モジュール: v1.0.0」と取得元の表示。取得できなかった
+  場合は、取得対象の版・URL・通信エラーの内容を表示する）
+- 取得先の回帰テスト（`test/test_notebook_module_source.py`）を追加した
+- 避難所候補の算出・ハザード判定・道路経路・レビュー画面・CSVの形式・API互換性の値は変更なし

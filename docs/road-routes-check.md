@@ -62,6 +62,8 @@
 なお、Notebook は Colab 実行時に `src/` を GitHub の `main` から取得する。通常の利用では、変更が `main` に
 取り込まれてから道路経路を使えるようになる（`main` 側のモジュールが古いと、Notebook のモジュール互換性
 チェックで止まる）。
+（2026-09-29 以降、Notebook は `src/` を `main` ではなく `v1.0.0` タグから取得する。`src/` の変更は、取得する版を
+更新するまで運用に反映されない。[docs/project-status.md](./project-status.md) の「6.4」を参照）
 
 ## 1. 手順（再現方法）
 
