@@ -706,6 +706,92 @@ class ResidentialAddressTest(unittest.TestCase):
         self.assertNotEqual(geocode("糸満市架空町673番地")["status"], "matched")
 
 
+class ResidentialLastNumberTest(unittest.TestCase):
+    """住居表示住所の3段目（例: 36番7-201号 の 201）の扱い。3段の完全一致を最優先し、0件の場合だけ、
+    3段目を除いた住居（住居番号2が空欄）がABRに1件だけあり座標もあるときに、3段目を部屋番号等として除外する。"""
+
+    def test_3段の完全一致を優先する(self):
+        result = geocode("糸満市架空町37-16-1")
+        self.assertEqual(result["status"], "matched")
+        self.assertEqual((result["blk_num"], result["rsdt_num"], result["rsdt_num2"]), ("37", "16", "1"))
+        self.assertEqual(coordinates(result), COORD_KAKU_37_16_1)  # 37番16号（住居番号2なし）ではない
+        self.assertIsNone(result["ignored_number"])
+        self.assertEqual(result["abr_address"], "架空町37番16-1号")
+
+    def test_3段が無く2段の住居が1件だけなら3段目を除外する(self):
+        for address in ("糸満市架空町37-14-201", "糸満市架空町37番14-201号", "糸満市架空町37番14号201",
+                        "糸満市架空町３７番１４－２０１号"):
+            with self.subTest(address):
+                result = geocode(address)
+                self.assertEqual(result["status"], "matched")
+                self.assertEqual(coordinates(result), COORD_KAKU_37_14)
+                self.assertEqual((result["blk_num"], result["rsdt_num"], result["rsdt_num2"]), ("37", "14", ""))
+                self.assertEqual(result["ignored_number"], "201")
+                self.assertEqual(result["abr_address"], "架空町37番14号")
+                self.assertEqual(result["ignored_suffix"], "")
+        # 丁目のある町字・既存の住居表示の町字でも同じ
+        result = geocode("糸満市架空台2丁目32番2-307号")
+        self.assertEqual((result["status"], result["ignored_number"]), ("matched", "307"))
+        self.assertEqual(coordinates(result), COORD_KAKUDAI2_32_2)
+        self.assertEqual(result["abr_address"], "架空台２丁目32番2号")
+        result = geocode("糸満市西崎町1丁目1番1-102号")
+        self.assertEqual((result["status"], result["ignored_number"]), ("matched", "102"))
+        self.assertEqual(coordinates(result), COORD_NISHIZAKI1_1_1)
+
+    def test_2段の住居も無ければ未変換(self):
+        for address, status in (("糸満市架空町37-13-201", "residential_number_not_found"),
+                                ("糸満市架空町40-1-201", "residential_number_not_found"),  # 街区位置参照でも代用しない
+                                ("糸満市架空町39-1-201", "residential_block_not_found")):
+            with self.subTest(address):
+                result = geocode(address)
+                self.assertEqual(result["status"], status)
+                self.assertEqual(coordinates(result), (None, None))
+                self.assertIsNone(result["ignored_number"])
+
+    def test_2段の住居が複数なら推測しない(self):
+        result = geocode("糸満市架空町41-7-201")
+        self.assertEqual(result["status"], "ambiguous_residential")
+        self.assertEqual(coordinates(result), (None, None))
+
+    def test_2段の住居に座標が無ければ未変換(self):
+        for address in ("糸満市架空町38-1-201", "糸満市架空町38-2-201"):  # 住居位置参照なし／座標が空欄
+            with self.subTest(address):
+                result = geocode(address)
+                self.assertEqual(result["status"], "residential_number_not_found")
+                self.assertEqual(coordinates(result), (None, None))
+
+    def test_住居番号2を使う住居番号では3段目を除外しない(self):
+        """37番16号には住居番号2が1の住居がある。3段目の「2」はABRに無い住居番号2の可能性があるため、
+        37番16号（住居番号2なし）へ寄せない。"""
+        result = geocode("糸満市架空町37-16-2")
+        self.assertEqual(result["status"], "residential_number_not_found")
+        self.assertEqual(coordinates(result), (None, None))
+
+    def test_方書と部屋番号がある場合も同じ順序で照合する(self):
+        result = geocode("糸満市架空台2丁目32番2-307号 架空コーポ")
+        self.assertEqual(result["status"], "matched")
+        self.assertEqual(coordinates(result), COORD_KAKUDAI2_32_2)
+        self.assertEqual((result["ignored_number"], result["ignored_suffix"]), ("307", "架空コーポ"))
+        self.assertEqual(result["matched_address"], "糸満市架空台2丁目32番2-307号")
+        result = geocode("糸満市架空町37番14-201号 架空ハイツ 東棟")
+        self.assertEqual((result["status"], result["ignored_number"]), ("matched", "201"))
+        self.assertEqual(result["ignored_suffix"], "架空ハイツ 東棟")
+        # 3段の完全一致がある場合は、方書があっても3段のまま
+        result = geocode("糸満市架空町37-16-1 架空ハイツ")
+        self.assertEqual(coordinates(result), COORD_KAKU_37_16_1)
+        self.assertIsNone(result["ignored_number"])
+        # 2段の住居も無ければ、方書を外しても未変換のまま
+        self.assertEqual(geocode("糸満市架空町37-13-201 架空ハイツ")["status"], "residential_number_not_found")
+
+    def test_地番住所の3段は短縮しない(self):
+        """住居表示の3段目の扱いは地番住所には適用しない（673-2-101 を 673-2 にしない）。"""
+        result = geocode("糸満市字糸満673-2-101")
+        self.assertEqual(result["status"], "parcel_not_found")
+        self.assertEqual(result["parcel_number"], "673-2-101")
+        self.assertIsNone(result["ignored_number"])
+        self.assertEqual(geocode("糸満市字糸満673-2101")["abr_address"], "字糸満673-2101")
+
+
 class PrefectureDataTest(unittest.TestCase):
     """県単位のデータに別の自治体の行が混ざっていても、対象自治体の行だけを使うこと。"""
 
@@ -800,8 +886,12 @@ class SuffixTest(unittest.TestCase):
 
     def test_方書と分かる場合は数字の後の空白でも外す(self):
         self.assert_matched_ignoring("糸満市字糸満673番地2 101号室", COORD_673_2, "糸満市字糸満673番地2", "101号室")
-        # 「号」で番号が終わっている住居表示住所の後ろの数字は方書として外す
-        self.assert_matched_ignoring("糸満市架空町37番14号 101", COORD_KAKU_37_14, "糸満市架空町37番14号", "101")
+        # 「号」で番号が終わっている住居表示住所の後ろの数字は、住所全文で3段（37・14・101）として照合し、
+        # 3段の完全一致が無く37番14号が1件だけあるため、3段目として除外される
+        result = geocode("糸満市架空町37番14号 101")
+        self.assertEqual(result["status"], "matched")
+        self.assertEqual(coordinates(result), COORD_KAKU_37_14)
+        self.assertEqual(result["ignored_number"], "101")
 
 
 # =============================================================================
@@ -861,13 +951,14 @@ class DifferentAddressTest(unittest.TestCase):
         self.assertIsNone(result["prc_id"])
         self.assertEqual(geocode("糸満市字糸満673番地2号室")["status"], "parcel_not_found")
 
-    def test_住居表示の番号末尾を部屋番号扱いしない(self):
-        for address in ("糸満市架空町37-14-101", "糸満市架空町37番14号101"):
-            with self.subTest(address):
-                result = geocode(address)
-                self.assertEqual(result["status"], "residential_number_not_found")
-                self.assertEqual((result["blk_num"], result["rsdt_num"], result["rsdt_num2"]), ("37", "14", "101"))
-                self.assertEqual(coordinates(result), (None, None))
+    def test_住居表示の3段目を最初から部屋番号と決めつけない(self):
+        """3段目は、まず住居番号2として完全一致を試す。住居番号2を使っている住居番号（37番16号には
+        住居番号2が1の住居がある）では、ABRに無い3段目を部屋番号とみなして近い住居へ寄せない。"""
+        self.assertEqual(coordinates(geocode("糸満市架空町37-16-1")), COORD_KAKU_37_16_1)
+        result = geocode("糸満市架空町37-16-2")
+        self.assertEqual(result["status"], "residential_number_not_found")
+        self.assertEqual((result["blk_num"], result["rsdt_num"], result["rsdt_num2"]), ("37", "16", "2"))
+        self.assertEqual(coordinates(result), (None, None))
 
     def test_近い地番や住居番号へ寄せない(self):
         for address, status in (("糸満市字糸満674", "parcel_not_found"),
@@ -913,6 +1004,7 @@ T004,沖縄県糸満市架空町37番13号,,,
 T005,,,,
 T006,糸満市字座波50,26.5,127.5,matched
 0007,N/A,,,
+T008,沖縄県糸満市架空台2丁目32番2-307号 架空コーポ,,,
 """
 
 
@@ -941,7 +1033,7 @@ class OutputCsvTest(unittest.TestCase):
         self.assertEqual(statuses, {
             "T001": "matched", "T002": "matched", "T003": "matched",
             "T004": "residential_number_not_found", "T005": "blank_address",
-            "T006": "ambiguous_parcel", "0007": "town_not_found",
+            "T006": "ambiguous_parcel", "0007": "town_not_found", "T008": "matched",
         })
         for _, row in self.rows.iterrows():
             with self.subTest(row["resident_id"]):
@@ -949,6 +1041,10 @@ class OutputCsvTest(unittest.TestCase):
                 self.assertEqual(has_coordinates, row["geocode_status"] == "matched")
         t003 = self.rows[self.rows["resident_id"] == "T003"].iloc[0]
         self.assertEqual((float(t003["latitude"]), float(t003["longitude"])), COORD_KAKU_37_14)
+        # 住居表示の3段目を除外して照合した行も、address は入力のまま・座標は2段の住居のもの
+        t008 = self.rows[self.rows["resident_id"] == "T008"].iloc[0]
+        self.assertEqual(t008["address"], "沖縄県糸満市架空台2丁目32番2-307号 架空コーポ")
+        self.assertEqual((float(t008["latitude"]), float(t008["longitude"])), COORD_KAKUDAI2_32_2)
 
     def test_確認用の情報は正式CSVへ出さない(self):
         # 方書（除外した部分）・照合に使った住所・住所の種類等は、address 以外の列に入っていない
@@ -958,8 +1054,9 @@ class OutputCsvTest(unittest.TestCase):
                     self.assertNotIn("架空", value)
                     self.assertNotIn(value, ("地番", "住居表示"))
         # Notebook上では件数を確認できる
-        self.assertIn("方書を除外して照合できた住所: 2件", self.printed)
-        self.assertIn("住居表示住所として照合できた住所: 1件", self.printed)
+        self.assertIn("方書を除外して照合できた住所: 3件", self.printed)
+        self.assertIn("住居表示住所として照合できた住所: 2件", self.printed)
+        self.assertIn("住居表示の末尾番号（3段目）を部屋番号等として除外して照合できた住所: 1件", self.printed)
 
 
 class NormalizeAddressTest(unittest.TestCase):
