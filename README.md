@@ -148,9 +148,16 @@ BODIK Data API から糸満市の自治体標準オープンデータセット�
 4. 画面の指示に従って、要支援者CSV（と、必要ならハザードデータ）をアップロードする
 5. `assigned_shelters.csv` と `sheltermatch_review.zip` をダウンロードする
 
-住所しかない場合は、先に `address_geocode.ipynb` で住所→座標変換を行います。ABR公式CSV3種類を
-アップロードし、住所CSVを変換して、同じ5列のCSVを出力します。手順は
-[docs/address-data.md](docs/address-data.md) を参照してください。
+住所しかない場合は、先に `address_geocode.ipynb` で住所→座標変換を行います。地番住所・住居表示住所と、
+それらの後ろに施設名・建物名・部屋番号等（方書）が付いた住所を変換できます（`address` 列は書き換えません）。
+ABR公式データのZIPをアップロードし、住所CSVを変換して、同じ5列のCSVを出力します。
+
+- 地番住所用（必須）: 町字マスタ・地番マスタ・地番位置参照（`mt_town_all` / `mt_parcel_city472107` /
+  `mt_parcel_pos_city472107`）
+- 住居表示住所用: 住居表示-街区・街区位置参照・住居・住居位置参照（`mt_rsdtdsp_*_pref47`。沖縄県単位の配布で、
+  Notebookが糸満市の行だけを抽出して使う）
+
+取得元・手順・結果（`geocode_status`）の読み方は [docs/address-data.md](docs/address-data.md) を参照してください。
 
 ```text
 templates/residents.csv
@@ -194,9 +201,10 @@ python3 -m unittest discover -s test
 最短距離・遠すぎる道路へ接続しないこと・つながらない場合に経路を作らないこと等を確認します
 （networkx・shapely・pyproj・scipy が必要です）。
 
-`address_geocode.ipynb` の住所変換ロジックをそのまま読み込み、実データで起こり得る住所表記
-（全角／半角、漢数字の丁目、ハイフン類、空白、「字」「大字」の有無、`番地`/`番`/`号`/`の` の表記差など）が
-同じ地番・同じ座標に変換されること、および別の住所を同一視していないことを確認します。
+住所変換のテスト（`test_address_conversion.py`）は `address_geocode.ipynb` のセルをそのまま実行し、完全な
+架空のABRデータで、住所表記の揺れ（全角／半角、漢数字の丁目、ハイフン類、空白、「字」「大字」の有無、
+`番地`/`番`/`号`/`の` の表記差など）・住居表示住所・方書付き住所が同じ地番・住居・座標に変換されること、
+および別の住所を同一視していないことを確認します。
 
 Notebook 全体の通し確認は Google Colab 上で行います。過去の確認結果は
 [docs/operation-check.md](docs/operation-check.md)・[docs/performance-test.md](docs/performance-test.md)
