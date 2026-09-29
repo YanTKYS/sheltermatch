@@ -175,3 +175,17 @@
 - Notebook上の確認用の表示に、ABRで一致した住所（`abr_address`）と、除外した3段目（`ignored_number`）を追加し、
   3段目を除外して照合できた件数と一覧を表示するようにした。正式CSVは従来どおり5列
 - 地番住所（`673-2-101` 等）の照合は変更なし
+
+## 2026-09-29（ドキュメント: 実機確認結果の反映）
+
+詳細: [docs/project-status.md](docs/project-status.md) の「7.2 実機確認の実績」、[docs/address-data.md](docs/address-data.md) の「10. データの更新と再変換の手順」
+
+### Documentation
+
+- 実ABR・実運用データによる Google Colab での一気通貫確認（住所変換から `sheltermatch_review.zip` の作成まで）の
+  結果をドキュメントへ反映した（件数・状態のみを記載し、実データはリポジトリへ含めない）
+- 住所変換できなかった住所の扱いと、ABR更新時の再確認手順を明文化した
+- 事前確認（[docs/pre-production-check-2026-09-28.md](docs/pre-production-check-2026-09-28.md)）の各事項に、
+  現在の対応状況を追記した（実行コードの版の固定は、`v1.0.0` タグは作成済みだが Notebook の取得先をタグへ
+  固定する対応は未実施）
+- コード・Notebook・テスト・出力仕様の変更は無い
