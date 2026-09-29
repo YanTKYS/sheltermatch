@@ -158,6 +158,8 @@ ABR公式データのZIPをアップロードし、住所CSVを変換して、�
   Notebookが糸満市の行だけを抽出して使う）
 
 取得元・手順・結果（`geocode_status`）の読み方は [docs/address-data.md](docs/address-data.md) を参照してください。
+ABRデータはこのリポジトリに保管しません。更新されたABRデータの再取得と再変換の手順は、同文書の
+「10. データの更新と再変換の手順」を参照してください。
 
 ```text
 templates/residents.csv
@@ -206,7 +208,9 @@ python3 -m unittest discover -s test
 `番地`/`番`/`号`/`の` の表記差など）・住居表示住所・方書付き住所が同じ地番・住居・座標に変換されること、
 および別の住所を同一視していないことを確認します。
 
-Notebook 全体の通し確認は Google Colab 上で行います。過去の確認結果は
+Notebook 全体の通し確認は Google Colab 上で行います。実際の公開データと実際の運用データによる
+住所変換から候補算出・レビューZIP出力までの確認結果は、[docs/project-status.md](docs/project-status.md) の
+「7.2 実機確認の実績」を参照してください。過去の確認結果は
 [docs/operation-check.md](docs/operation-check.md)・[docs/performance-test.md](docs/performance-test.md)
 を参照してください。
 
@@ -229,10 +233,10 @@ Notebook 全体の通し確認は Google Colab 上で行います。過去の確
 | ドキュメント | 内容 |
 | --- | --- |
 | [docs/project-status.md](docs/project-status.md) | 現状整理・開発方針・実装済み機能の詳細 |
-| [docs/address-data.md](docs/address-data.md) | ABR公式データの取得手順と `geocode_status` の読み方 |
+| [docs/address-data.md](docs/address-data.md) | ABR公式データの取得手順、`geocode_status` の読み方、ABR更新時の再変換手順 |
 | [docs/hazard-data.md](docs/hazard-data.md) | ハザードデータの取得元と投入手順 |
 | [docs/operation-check.md](docs/operation-check.md) | 操作導線・エラー処理の確認記録 |
 | [docs/performance-test.md](docs/performance-test.md) | 処理時間の確認記録 |
 | [docs/road-routes-check.md](docs/road-routes-check.md) | 道路に沿った参考経路の確認記録 |
-| [docs/pre-production-check-2026-09-28.md](docs/pre-production-check-2026-09-28.md) | 実データ投入前の事前確認（サンドボックスでの確認結果と対応案。Colabでの通し確認は未実施） |
+| [docs/pre-production-check-2026-09-28.md](docs/pre-production-check-2026-09-28.md) | 実データ投入前の事前確認（サンドボックスでの確認結果と対応案。その後の対応状況・実機確認の結果を追記） |
 | [CHANGELOG.md](CHANGELOG.md) | 変更履歴 |
