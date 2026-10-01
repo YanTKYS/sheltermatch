@@ -1,12 +1,17 @@
 """sheltermatch ハザードデータ（GeoJSON / Shapefile / 公式配布ZIP）の読込処理。
 
 アップロードされたファイルを解析・正規化し、EPSG:4326のPolygon / MultiPolygonだけを集めた
-1つのGeoDataFrame（`hazard_type` と `geometry` の2列）を返します。sheltermatch.ipynb は
-Google Colabでの実行時にこのファイルをGitHubから取得し、`load_uploaded_hazards()` を
-呼び出すだけにしています。Notebookのグローバル変数には依存しません。
+1つのGeoDataFrame（`hazard_category`・`hazard_type`・`geometry` の3列）を返します。
+sheltermatch.ipynb はGoogle Colabでの実行時にこのファイルをGitHubから取得し、
+`load_uploaded_hazards()` を呼び出すだけにしています。Notebookのグローバル変数には依存しません。
 
-このモジュールは読み込みと正規化だけを行います。要支援者・候補避難所がハザード区域内かどうかの
-判定そのものは、従来どおりNotebook側（距離計算・ハザード判定セル）で行います。
+* `hazard_category` … ハザードの大分類（津波・高潮・洪水・土砂災害など）。アップロードした
+  ファイルごとに決まり、ハザード別の人数集計はこの列で行う（文字列を後から解析しない）
+* `hazard_type` … 大分類に詳細区分（津波の浸水深区分、洪水の計画規模／想定最大規模、土砂災害の
+  現象区分など）を付けた表記。本人の詳細表示にだけ使い、集計には使わない
+
+このモジュールは読み込みと正規化だけを行います。要支援者本人の地点がハザード区域内かどうかの
+判定そのものは、assignment モジュール（src/assignment/shelter_assignment.py）が行います。
 
 区域判定に使えるのはPolygon / MultiPolygonだけなので、次のように扱います。
 
@@ -22,7 +27,7 @@ import io
 import re
 import tempfile
 import zipfile
-from collections import Counter
+from collections import Counter, namedtuple
 from pathlib import Path
 
 import geopandas as gpd
@@ -32,7 +37,7 @@ from shapely import make_valid, union_all
 
 # Notebookとこのモジュールの受け渡し方（load_uploaded_hazardsの引数・戻り値）を変えたら上げる。
 # Notebook側は読み込んだ直後にこの値を確認し、互換性のない組み合わせのまま処理を続けない。
-HAZARD_LOADER_API_VERSION = 1
+HAZARD_LOADER_API_VERSION = 2
 
 
 def _decode_zip_entry_name(member):
@@ -180,7 +185,7 @@ POLYGON_TYPES = ["Polygon", "MultiPolygon"]
 
 def empty_hazard_layer():
     """有効なハザード区域が1件も無い場合に返す、空のレイヤー。"""
-    return gpd.GeoDataFrame({"hazard_type": [], "geometry": []}, crs="EPSG:4326")
+    return gpd.GeoDataFrame({"hazard_category": [], "hazard_type": [], "geometry": []}, crs="EPSG:4326")
 
 
 def repair_invalid_polygon(geometry):
@@ -220,7 +225,7 @@ def repair_invalid_polygon(geometry):
     return repaired, from_collection
 
 
-def load_hazard_layer(source, hazard_type, assume_wgs84_without_crs):
+def load_hazard_layer(source, hazard_type, assume_wgs84_without_crs, hazard_category=None):
     """1件の空間データ（GeoJSONまたはShapefile）を読み込み、hazard_type/geometryの2列に正規化し、
     EPSG:4326へ統一する。区域判定はPolygon/MultiPolygonのみを対象とするため、次のように扱う。
 
@@ -232,7 +237,8 @@ def load_hazard_layer(source, hazard_type, assume_wgs84_without_crs):
 
     行ごとのhazard_typeはderive_feature_hazard_typesで組み立てる（『分類』属性やA33の公式属性が
     あれば詳細区分を反映し、無ければhazard_typeをそのまま使う）。ジオメトリを直した行も、
-    元のhazard_typeをそのまま引き継ぐ（種別・カテゴリの再解釈はしない）。
+    元のhazard_typeをそのまま引き継ぐ（種別・カテゴリの再解釈はしない）。大分類の hazard_category は
+    引数で受け取った値を全行へそのまま付ける（省略時はhazard_typeと同じ。詳細区分から推測しない）。
 
     CRSが取得できる場合はEPSG:4326へ変換する。CRSが取得できない場合、assume_wgs84_without_crsが
     Trueなら（GeoJSON等、既定でWGS84として扱われる形式）そのままEPSG:4326とみなす。Falseの場合
@@ -291,6 +297,7 @@ def load_hazard_layer(source, hazard_type, assume_wgs84_without_crs):
     kept_rows = gdf.iloc[kept_positions].reset_index(drop=True)
     layer = gpd.GeoDataFrame(
         {
+            "hazard_category": hazard_category if hazard_category is not None else hazard_type,
             "hazard_type": derive_feature_hazard_types(kept_rows, hazard_type),
             "geometry": kept_geometries,
         },
@@ -322,10 +329,23 @@ def resolve_layer_hazard_type(base_hazard_type, vector_path, extract_dir):
     return f"{base_hazard_type}:{category}" if category else base_hazard_type
 
 
+# ハザードの大分類（ハザード別の人数集計の単位）。公式データの配布形式から判定できる種別だけを
+# 定義し、判定できなかったデータは、利用者が入力した種別名（またはファイル名）をそのまま大分類とする。
+CATEGORY_TSUNAMI = "津波"
+CATEGORY_STORM_SURGE = "高潮"
+CATEGORY_FLOOD = "洪水"
+CATEGORY_LANDSLIDE = "土砂災害"
+
+DetectedHazard = namedtuple("DetectedHazard", ["category", "label"])
+DetectedHazard.__doc__ = """ファイル名から判定したハザード種別。category は大分類（集計の単位）、
+label は hazard_type の基本表記（洪水の河川区分のように、大分類より詳しい表記を持つことがある）。"""
+
+
 def _detect_a31a_hazard_type(filename):
     """国土数値情報A31a（洪水浸水想定区域データ）のファイル名規則
     （例: A31a-25_47_10_GEOJSON.zip）から、年度・都道府県コードには依存せず、
-    河川区分（10/20）のみで洪水の種別名を判定する。一致しなければNoneを返す。"""
+    河川区分（10/20）のみで洪水の種別を判定する。大分類は洪水で、河川区分は詳細区分
+    （hazard_typeの表記）に反映する。一致しなければNoneを返す。"""
     match = re.match(r"^A31a-\d+_\d+_(10|20)(?=[_.])", filename)
     if not match:
         return None
@@ -333,7 +353,7 @@ def _detect_a31a_hazard_type(filename):
         "10": "洪水（洪水予報河川・水位周知河川）",
         "20": "洪水（その他の河川）",
     }
-    return river_classification_labels[match.group(1)]
+    return DetectedHazard(CATEGORY_FLOOD, river_classification_labels[match.group(1)])
 
 
 def _detect_a33_hazard_type(filename):
@@ -342,7 +362,7 @@ def _detect_a33_hazard_type(filename):
     ファイル名の先頭部分だけを見るため、Colab等がファイル名重複を避けて末尾に付与する
     '(1)' 等の連番があっても判定できる。一致しなければNoneを返す。"""
     if re.match(r"^A33-\d+_\d+_GEOJSON", filename):
-        return "土砂災害"
+        return DetectedHazard(CATEGORY_LANDSLIDE, CATEGORY_LANDSLIDE)
     return None
 
 
@@ -351,7 +371,7 @@ def _detect_tsunami_level_hazard_type(filename):
     津波と判定する。浸水深の分類はファイル名のlevel番号からは推測せず、実データのShapefile内
     『分類』属性（load_hazard_layerで反映）を優先する。"""
     if re.match(r"^level[1-7](?=[_.])", filename, re.IGNORECASE):
-        return "津波"
+        return DetectedHazard(CATEGORY_TSUNAMI, CATEGORY_TSUNAMI)
     return None
 
 
@@ -359,7 +379,7 @@ def _detect_takashio_hazard_type(filename):
     """沖縄県高潮浸水想定データのファイル名規則
     （例: 47007_takasiosinnsuisoutei_22itoman.zip）から高潮と判定する。"""
     if re.match(r"^\d+_takasiosinnsuisoutei_", filename):
-        return "高潮"
+        return DetectedHazard(CATEGORY_STORM_SURGE, CATEGORY_STORM_SURGE)
     return None
 
 
@@ -375,26 +395,29 @@ KNOWN_HAZARD_FILENAME_DETECTORS = [
 ]
 
 
-def detect_hazard_type(filename):
-    """既知の公式データ配布ファイル名パターンからハザード種別名を自動判定する。ZIP・GeoJSON単体の
-    どちらのファイル名にも同じ規則を適用する（形式ごとに判定ロジックを二重実装しない）。曖昧な推測は
-    せず、既知のパターンのいずれにも一致しない場合はNoneを返す（呼び出し側で利用者入力へフォールバック
-    する）。"""
+def detect_hazard(filename):
+    """既知の公式データ配布ファイル名パターンからハザード種別（大分類と基本表記）を自動判定する。
+    ZIP・GeoJSON単体のどちらのファイル名にも同じ規則を適用する（形式ごとに判定ロジックを二重実装
+    しない）。曖昧な推測はせず、既知のパターンのいずれにも一致しない場合はNoneを返す
+    （呼び出し側で利用者入力へフォールバックする）。"""
     for detector in KNOWN_HAZARD_FILENAME_DETECTORS:
-        hazard_type = detector(filename)
-        if hazard_type is not None:
-            return hazard_type
+        detected = detector(filename)
+        if detected is not None:
+            return detected
     return None
 
 
-def load_hazard_upload(filename, file_bytes, hazard_type):
+def load_hazard_upload(filename, file_bytes, hazard_type, hazard_category=None):
     """1つのアップロード（.geojson または国・県等の公式配布ZIP）から、GeoDataFrameを組み立てる。
     ZIPの場合は安全に展開し、内部のディレクトリ構造に関わらず配下の.geojsonと.shp（Shapefile。
     同名の.shx/.dbfが揃っているものに限る）を再帰的に探索する（特定の配布元のファイル名・
     ディレクトリ名には依存しない）。サブフォルダがあればカテゴリとしてhazard_typeに反映し、
     サブフォルダがなければ渡された基本種別名をそのままhazard_typeとする（高潮のみファイル名から
-    カテゴリを補う。resolve_layer_hazard_type参照）。利用者には集約したサマリのみ表示し、
-    ファイルごとの詳細ログは出さない。"""
+    カテゴリを補う。resolve_layer_hazard_type参照）。大分類（hazard_category）は、アップロード1件
+    ごとに1つで、省略時は渡された基本種別名と同じ（サブフォルダ名等の詳細区分は大分類に含めない）。
+    利用者には集約したサマリのみ表示し、ファイルごとの詳細ログは出さない。"""
+    if hazard_category is None:
+        hazard_category = hazard_type
     suffix = Path(filename).suffix.lower()
     if suffix not in (".geojson", ".zip"):
         raise ValueError(f"'{filename}' は対応していない形式です。.geojson または .zip を選択してください。")
@@ -408,7 +431,8 @@ def load_hazard_upload(filename, file_bytes, hazard_type):
 
     if suffix == ".geojson":
         layer, crs_note, layer_counts = load_hazard_layer(
-            io.BytesIO(file_bytes), hazard_type, assume_wgs84_without_crs=True
+            io.BytesIO(file_bytes), hazard_type, assume_wgs84_without_crs=True,
+            hazard_category=hazard_category,
         )
         geometry_counts.update(layer_counts)
         if len(layer) == 0:
@@ -447,7 +471,8 @@ def load_hazard_upload(filename, file_bytes, hazard_type):
             for vector_path, is_geojson in all_vector_paths:
                 file_hazard_type = resolve_layer_hazard_type(hazard_type, vector_path, extract_dir)
                 layer, crs_note, layer_counts = load_hazard_layer(
-                    vector_path, file_hazard_type, assume_wgs84_without_crs=is_geojson
+                    vector_path, file_hazard_type, assume_wgs84_without_crs=is_geojson,
+                    hazard_category=hazard_category,
                 )
                 geometry_counts.update(layer_counts)
                 if crs_note == "unresolved":
@@ -504,6 +529,7 @@ def load_hazard_upload(filename, file_bytes, hazard_type):
 
     combined = gpd.GeoDataFrame(pd.concat(layers, ignore_index=True), crs="EPSG:4326")
     print(f"有効なハザードポリゴンを {len(combined)}件読み込みました。")
+    print(f"hazard_category（大分類）='{hazard_category}'")
     combined_hazard_types = sorted(combined["hazard_type"].unique())
     if len(combined_hazard_types) == 1:
         print(f"hazard_type='{combined_hazard_types[0]}'")
@@ -525,21 +551,23 @@ def load_uploaded_hazards(uploaded_hazards, ask_hazard_type=None):
                       引数はファイル名で、戻り値が種別名になる。省略した場合や、空の文字列が
                       返った場合は、ファイル名をそのまま種別名として使う（従来と同じ挙動）。
 
-    戻り値は hazard_type / geometry の2列を持つEPSG:4326のGeoDataFrame。
+    戻り値は hazard_category（大分類）/ hazard_type（詳細区分つきの表記）/ geometry の3列を持つ
+    EPSG:4326のGeoDataFrame。
     有効なハザード区域を1件も読み込めなかった場合はRuntimeErrorを送出する。
     """
     layers = []
     load_errors = []
 
     for filename, file_bytes in uploaded_hazards.items():
-        detected_hazard_type = detect_hazard_type(filename)
-        if detected_hazard_type is not None:
-            hazard_type = detected_hazard_type
+        detected = detect_hazard(filename)
+        if detected is not None:
+            hazard_type, hazard_category = detected.label, detected.category
             print(f"'{filename}'")
-            print(f"→ ハザード種別を自動判定しました: {hazard_type}")
+            print(f"→ ハザード種別を自動判定しました: {hazard_type}（大分類: {hazard_category}）")
         else:
             answer = ask_hazard_type(filename) if ask_hazard_type is not None else ""
             hazard_type = str(answer).strip() or filename
+            hazard_category = hazard_type
 
         # 選択した複数ファイルのうち一部だけ読込失敗した状態のまま候補・ハザード判定へ進めると、
         # 判定結果のFalse（有効な座標で判定した結果、区域外）が「選択した全ハザードデータで
@@ -549,7 +577,7 @@ def load_uploaded_hazards(uploaded_hazards, ask_hazard_type=None):
         # 停止する（5種類全部を必須にはしないが、選択したファイルは全て正常に読めることを
         # 結果生成の条件にする。fail-closed）。
         try:
-            layers.append(load_hazard_upload(filename, file_bytes, hazard_type))
+            layers.append(load_hazard_upload(filename, file_bytes, hazard_type, hazard_category))
         except (RuntimeError, ValueError) as error:
             load_errors.append((filename, str(error)))
 

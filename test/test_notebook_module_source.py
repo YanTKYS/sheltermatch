@@ -5,7 +5,8 @@
 
 * 取得する版が v1.0.0 であること（版を更新するときは、このテストも意図した変更として一緒に更新する）
 * main の src/ を取得先として使っていないこと
-* hazard_loader・review_builder・review_template.html・road_routes が、すべて同じ取得元から取得されること
+* hazard_loader・shelter_assignment・review_builder・review_template.html が、すべて同じ取得元から取得されること
+  （道路経路のモジュール road_routes は取得しない）
 * 既存の API バージョンの確認（互換性のないモジュールでは止まる）がそのまま働くこと
 
 外部通信は行わない。「外部モジュール準備」セルをそのまま実行し、requests.get だけを差し替えて、取得した
@@ -24,16 +25,17 @@ from pathlib import Path
 
 NOTEBOOK_PATH = Path(__file__).resolve().parent.parent / "sheltermatch.ipynb"
 MODULE_CELL_TITLE = "# ===== 外部モジュール準備 ====="
-ROAD_ROUTES_CELL_TITLE = "# ===== 道路に沿った参考経路の算出"
 
 EXPECTED_REF = "v1.0.0"
 EXPECTED_BASE_URL = f"https://raw.githubusercontent.com/YanTKYS/sheltermatch/{EXPECTED_REF}/src"
 
-# 取得するファイルと、v1.0.0 の src/ が持つ API バージョン（Notebook 側の想定値と一致している必要がある）
+# 取得するファイルと、src/ が持つ API バージョン（Notebook 側の想定値と一致している必要がある）。
+# v1.1.0 で、避難所候補の算出・ハザード集計を行う assignment を追加し、hazard_loader・review_builder の
+# API バージョンを上げ、道路経路（road_routes）の取得をやめた。
 EXPECTED_MODULES = {
-    "hazard/hazard_loader.py": ("hazard_loader", "HAZARD_LOADER_API_VERSION", 1),
-    "review/review_builder.py": ("review_builder", "REVIEW_BUILDER_API_VERSION", 2),
-    "review/road_routes.py": ("road_routes", "ROAD_ROUTES_API_VERSION", 1),
+    "hazard/hazard_loader.py": ("hazard_loader", "HAZARD_LOADER_API_VERSION", 2),
+    "assignment/shelter_assignment.py": ("shelter_assignment", "ASSIGNMENT_API_VERSION", 1),
+    "review/review_builder.py": ("review_builder", "REVIEW_BUILDER_API_VERSION", 3),
 }
 EXPECTED_FILES = {"review/review_template.html"}
 
@@ -182,7 +184,6 @@ class ModuleSourceStaticTest(unittest.TestCase):
 
     def test_取得するファイルとAPIバージョンの想定値(self):
         calls = fetch_calls(cell_starting_with(MODULE_CELL_TITLE))
-        calls += fetch_calls(cell_starting_with(ROAD_ROUTES_CELL_TITLE))
         imported = {args[0]: tuple(args[1:]) for name, args, _ in calls if name == "import_module_from_github"}
         downloaded = {args[0] for name, args, _ in calls if name == "download_from_github" and args}
         self.assertEqual(imported, EXPECTED_MODULES)
@@ -206,9 +207,6 @@ class ModuleSourceRunTest(unittest.TestCase):
     def test_すべての外部モジュールを同じ版から取得する(self):
         with ModuleCellRun(module_contents()) as run:
             run.run()
-            # 道路経路のセルと同じ呼び出しで road_routes を取得する
-            for name, args, _ in fetch_calls(cell_starting_with(ROAD_ROUTES_CELL_TITLE)):
-                run.call(name, *args)
             self.assertEqual(run.namespace["SHELTERMATCH_CODE_REF"], EXPECTED_REF)
             self.assertEqual(run.namespace["GITHUB_RAW_BASE_URL"], EXPECTED_BASE_URL)
             self.assertEqual(
@@ -226,24 +224,31 @@ class ModuleSourceRunTest(unittest.TestCase):
     def test_APIバージョンが一致すれば読み込む(self):
         with ModuleCellRun(module_contents()) as run:
             run.run()
-            self.assertEqual(run.namespace["hazard_loader"].HAZARD_LOADER_API_VERSION, 1)
-            self.assertEqual(run.namespace["review_builder"].REVIEW_BUILDER_API_VERSION, 2)
+            self.assertEqual(run.namespace["hazard_loader"].HAZARD_LOADER_API_VERSION, 2)
+            self.assertEqual(run.namespace["assignment"].ASSIGNMENT_API_VERSION, 1)
+            self.assertEqual(run.namespace["review_builder"].REVIEW_BUILDER_API_VERSION, 3)
             self.assertTrue(Path(run.namespace["REVIEW_TEMPLATE_PATH"]).is_file())
-            road_routes = run.call("import_module_from_github", "review/road_routes.py", "road_routes",
-                                   "ROAD_ROUTES_API_VERSION", 1)
-            self.assertEqual(road_routes.ROAD_ROUTES_API_VERSION, 1)
 
     def test_APIバージョンが異なれば止まる(self):
-        contents = module_contents({"review/review_builder.py": 3})
+        contents = module_contents({"review/review_builder.py": 4})
         with ModuleCellRun(contents) as run:
             with self.assertRaises(RuntimeError) as caught:
                 run.run()
         message = str(caught.exception)
         self.assertIn("review_builder の互換性を確認できません", message)
-        self.assertIn("想定しているバージョン: 2", message)
-        self.assertIn("取得したモジュールのバージョン: 3", message)
+        self.assertIn("想定しているバージョン: 3", message)
+        self.assertIn("取得したモジュールのバージョン: 4", message)
         self.assertIn(EXPECTED_REF, message)
         self.assertNotIn("main", message)
+
+    def test_v1_0_0時点の旧APIのモジュールとの組み合わせでは止まる(self):
+        # v1.1.0 の Notebook は、v1.0.0 の src/（hazard_loader API 1・review_builder API 2）では動かさない。
+        # 取得する版を更新する前に新しい Notebook を実行しても、古いモジュールのまま処理を続けない。
+        contents = module_contents({"hazard/hazard_loader.py": 1, "review/review_builder.py": 2})
+        with ModuleCellRun(contents) as run:
+            with self.assertRaises(RuntimeError) as caught:
+                run.run()
+        self.assertIn("hazard_loader の互換性を確認できません", str(caught.exception))
 
     def test_APIバージョンが無ければ止まる(self):
         contents = module_contents()
