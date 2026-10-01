@@ -1,7 +1,9 @@
 """sheltermatch レビュー用HTML（補助成果物）の生成処理。
 
 `assigned_shelters.csv` が正式なデータ成果物で、このモジュールが作るHTMLは、その結果を職員が
-地図上で目視確認するための補助成果物です（避難所の割り当て結果ではありません）。
+地図上で目視確認するための補助成果物です（避難所の割り当て結果ではありません）。HTMLには、
+要支援者本人の地点・本人住所のハザード・候補避難所1〜3と直線距離・ハザード大分類別の人数集計を
+載せます（避難所や経路の安全性、道路に沿った経路は扱いません）。
 
 sheltermatch.ipynb はGoogle Colabでの実行時に、このファイルと review_template.html をGitHubから
 取得して `build_review_package()` を呼び出すだけにしています。Notebookのグローバル変数には
@@ -17,11 +19,6 @@ sheltermatch.ipynb はGoogle Colabでの実行時に、このファイルと rev
     sheltermatch_review/assets/basemap_itoman.png           … 表示範囲の背景地図
     sheltermatch_review/assets/js, css, images              … Leaflet本体（地図ライブラリ）
     sheltermatch_review/assets/leaflet-LICENSE.txt          … Leafletの公式LICENSE本文
-    sheltermatch_review/assets/osm-roads-NOTICE.txt         … 道路経路に使った道路データ（OpenStreetMap）の
-                                                              出典・ライセンス（道路経路を作成した場合のみ）
-
-道路に沿った参考経路（road_routes.py で算出。任意）は、経路の座標をreview.htmlへ埋め込むため、
-これも外部通信なしで表示できます。
 """
 import hashlib
 import io
@@ -45,7 +42,7 @@ import matplotlib.pyplot as plt  # noqa: E402  （バックエンドを指定し
 
 # Notebookとこのモジュールの受け渡し方（build_review_packageの引数・戻り値）を変えたら上げる。
 # Notebook側は読み込んだ直後にこの値を確認し、互換性のない組み合わせのまま処理を続けない。
-REVIEW_BUILDER_API_VERSION = 2
+REVIEW_BUILDER_API_VERSION = 3
 
 
 # =============================================================================
@@ -102,14 +99,19 @@ REVIEW_PACKAGE_NAME = "sheltermatch_review"
 REVIEW_ZIP_FILENAME = f"{REVIEW_PACKAGE_NAME}.zip"
 REVIEW_IMAGE_WIDTH = 1600  # ハザード表示用PNGの横幅（px）
 
-# 表示用のハザード大分類。解析結果として保持している詳細なhazard_typeは変更しない。
-HAZARD_DISPLAY_GROUPS = [
-    ("tsunami", "津波", "津波", "#0891b2"),
-    ("flood", "洪水", "洪水", "#2563eb"),
-    ("storm_surge", "高潮", "高潮", "#7c3aed"),
-    ("landslide", "土砂災害", "土砂災害", "#b45309"),
-    ("other", "その他", None, "#6b7280"),
-]
+# 候補避難所の件数（正式仕様として3件固定。assignment モジュールの CANDIDATE_COUNT と同じ値）。
+CANDIDATE_COUNT = 3
+
+# ハザード大分類ごとの表示（地図の画像レイヤーのキーと色）。大分類は hazard_loader が付けた
+# hazard_category をそのまま使う（表示用の文字列から推測しない）。ここに無い大分類は
+# EXTRA_HAZARD_COLORS から順に色を割り当てる。
+HAZARD_DISPLAY_STYLES = {
+    "津波": ("tsunami", "#0891b2"),
+    "高潮": ("storm_surge", "#7c3aed"),
+    "洪水": ("flood", "#2563eb"),
+    "土砂災害": ("landslide", "#b45309"),
+}
+EXTRA_HAZARD_COLORS = ["#6b7280", "#be185d", "#15803d", "#a16207", "#0f766e"]
 
 
 # =============================================================================
@@ -300,20 +302,38 @@ def render_offline_basemap(bounds, assets_dir):
 # ハザード区域の表示用PNG
 # =============================================================================
 
-def hazard_display_group(hazard_type):
-    """詳細なhazard_typeを、表示用の大分類キーへ寄せる（元のhazard_typeは変更しない）。"""
-    text = str(hazard_type)
-    for key, _label, prefix, _color in HAZARD_DISPLAY_GROUPS:
-        if prefix is not None and text.startswith(prefix):
-            return key
-    return "other"
+def hazard_layer_specs(categories):
+    """ハザードの大分類ごとの、地図の画像レイヤーのキー・表示名・色を [{"category", "key", "color"}, ...] で返す
+    （大分類は津波・高潮・洪水・土砂災害の順、それ以外は名前順）。"""
+    known = [category for category in HAZARD_DISPLAY_STYLES if category in categories]
+    others = sorted(set(categories) - set(known))
+    specs = []
+    for category in known:
+        key, color = HAZARD_DISPLAY_STYLES[category]
+        specs.append({"category": category, "key": key, "color": color})
+    for position, category in enumerate(others):
+        specs.append({
+            "category": category,
+            "key": f"other_{position + 1}",
+            "color": EXTRA_HAZARD_COLORS[position % len(EXTRA_HAZARD_COLORS)],
+        })
+    return specs
 
 
-def split_hazard_types(value):
-    """';'区切りのhazard_typeを一覧へ分解する（判定していない・該当なしは空の一覧）。"""
-    if value is None or (not isinstance(value, str) and pd.isna(value)):
-        return []
-    return [part for part in str(value).split(";") if part]
+def hazard_detail(category, hazard_type):
+    """本人の詳細表示用に、hazard_type から大分類の部分を除いた詳細区分を返す
+    （詳細区分が無ければ空文字列）。例: 「津波:0.3m以上1.0m未満」→「0.3m以上1.0m未満」、
+    「洪水（その他の河川）:計画規模」→「その他の河川:計画規模」。表示のためだけの整形で、
+    集計には使わない（集計は大分類 hazard_category で行う）。"""
+    if hazard_type == category:
+        return ""
+    detail = hazard_type[len(category):] if hazard_type.startswith(category) else hazard_type
+    detail = detail.lstrip(":：")
+    if detail.startswith("（") and "）" in detail:
+        inner, _, rest = detail[1:].partition("）")
+        rest = rest.lstrip(":：")
+        detail = inner + (f":{rest}" if rest else "")
+    return detail
 
 
 def review_display_bounds(latitudes, longitudes):
@@ -326,12 +346,13 @@ def review_display_bounds(latitudes, longitudes):
     return (min_lat - lat_margin, min_lon - lon_margin, max_lat + lat_margin, max_lon + lon_margin)
 
 
-def render_hazard_images(hazard_area, display_bounds, assets_dir):
+def render_hazard_images(hazard_area, layer_specs, display_bounds, assets_dir):
     """ハザード区域を大分類ごとの透過PNGへ描き出し、HTMLへ渡すレイヤー情報を返す。
 
     位置合わせのため、表示範囲をEPSG:3857へ変換した矩形の中で描く（緯度経度のまま描いた画像を
-    引き伸ばすと、Web地図上でずれるため）。同じ種別のポリゴンが重なった場所だけ濃くならないよう、
-    PNGは不透明な単色で描き、半透明表示はHTML側のレイヤー不透明度で行う。"""
+    引き伸ばすと、Web地図上でずれるため）。同じ大分類のポリゴンが重なった場所だけ濃くならないよう、
+    PNGは不透明な単色で描き、半透明表示はHTML側のレイヤー不透明度で行う。
+    layer_specs は hazard_layer_specs の戻り値。表示範囲に区域が無い大分類のPNGは作らない。"""
     min_lat, min_lon, max_lat, max_lon = display_bounds
     display_box = box(min_lon, min_lat, max_lon, max_lat)
 
@@ -346,11 +367,10 @@ def render_hazard_images(hazard_area, display_bounds, assets_dir):
     image_height = max(1, int(round(REVIEW_IMAGE_WIDTH * (maxy - miny) / (maxx - minx))))
 
     visible = visible.to_crs(epsg=3857)
-    display_groups = visible["hazard_type"].map(hazard_display_group)
 
     layers = []
-    for key, label, _prefix, color in HAZARD_DISPLAY_GROUPS:
-        group = visible[display_groups == key]
+    for spec in layer_specs:
+        group = visible[visible["hazard_category"] == spec["category"]]
         if len(group) == 0:
             continue
 
@@ -359,15 +379,15 @@ def render_hazard_images(hazard_area, display_bounds, assets_dir):
         axes.set_xlim(minx, maxx)
         axes.set_ylim(miny, maxy)
         axes.set_axis_off()
-        group.plot(ax=axes, color=color, linewidth=0, antialiased=False)
-        image_name = f"hazard_{key}.png"
+        group.plot(ax=axes, color=spec["color"], linewidth=0, antialiased=False)
+        image_name = f"hazard_{spec['key']}.png"
         figure.savefig(assets_dir / image_name, dpi=100, transparent=True)
         plt.close(figure)
 
         layers.append({
-            "key": key,
-            "label": label,
-            "color": color,
+            "key": spec["key"],
+            "label": spec["category"],
+            "color": spec["color"],
             "image": f"assets/{image_name}",
             # ImageOverlayへ渡す緯度経度の矩形。上でEPSG:3857へ変換したのと同じ矩形。
             "bounds": [[min_lat, min_lon], [max_lat, max_lon]],
@@ -379,20 +399,6 @@ def render_hazard_images(hazard_area, display_bounds, assets_dir):
 # =============================================================================
 # 埋め込みデータの組み立てと結果CSVとの照合
 # =============================================================================
-
-# 避難所データの災害種別列の接頭辞（sheltermatch.ipynbの避難所取得セルと同じ規則）。
-DISASTER_TYPE_COLUMN_PREFIX = "災害種別_"
-
-
-def disaster_type_names(shelters_df):
-    """避難所データの「災害種別_」列から、災害種別名の一覧を取り出す。
-
-    避難所ごとの対応区分（_disaster_support）には対応している種別しか入らないため、
-    画面で「非対応」を区別するには、非対応も含めた全種別の一覧が必要になる。"""
-    prefix_length = len(DISASTER_TYPE_COLUMN_PREFIX)
-    return [column[prefix_length:] for column in shelters_df.columns
-            if column.startswith(DISASTER_TYPE_COLUMN_PREFIX)]
-
 
 def json_value(value):
     """NaN等をそのままJSONにできないため、Pythonの標準的な値へ整える。"""
@@ -411,49 +417,45 @@ def json_value(value):
     return str(value)
 
 
-def build_review_data(final_df, review_rows, hazard_layers, basemap, top_n, disaster_types,
-                      road_routes=None):
+def build_review_data(final_df, review_rows, hazard_layers, layer_specs, basemap, hazard_summary):
     """結果CSVと同じ実行結果から、レビューHTMLへ埋め込むデータを組み立てる。
-    候補の順位・距離は候補算出ループで得たものをそのまま使い、ここで計算し直さない
+    候補の順位・距離は候補算出で得たものをそのまま使い、ここで計算し直さない
     （CSVとHTMLで候補順位がずれないようにするため）。
 
-    road_routes は道路に沿った参考経路の算出結果（作成しない設定のときはNone）。経路は
-    候補ごとに road_route として持たせる（結果CSVには含まれない、HTMLだけの参考情報）。"""
-    route_rows = road_routes.get("routes") if road_routes else None
+    hazard_summary は assignment モジュールの summarize_hazards の戻り値（ハザード大分類別の人数集計）。
+    人 × 大分類の重複除外は集計側で済んでおり、ここでは表示用に大分類のレイヤーキーを付けるだけ。"""
+    key_by_category = {spec["category"]: spec["key"] for spec in layer_specs}
+
     residents = []
     for position in range(len(final_df)):
         row = final_df.iloc[position]
         review_row = review_rows[position]
-        resident_routes = route_rows[position] if route_rows is not None else None
 
-        candidates = []
-        hazard_groups = set()
-        for candidate_index, candidate in enumerate(review_row["candidates"]):
-            shelter_types = split_hazard_types(candidate["shelter_hazard_types"])
-            line_types = split_hazard_types(candidate["straight_line_hazard_types"])
-            hazard_groups.update(hazard_display_group(t) for t in shelter_types + line_types)
-            entry = {
+        candidates = [
+            {
                 "rank": candidate["rank"],
                 "name": json_value(candidate["name"]),
                 "latitude": json_value(candidate["latitude"]),
                 "longitude": json_value(candidate["longitude"]),
                 "distance_m": json_value(candidate["distance_m"]),
-                "disaster_support": json_value(candidate["disaster_support"]),
-                "shelter_in_hazard": json_value(candidate["shelter_in_hazard"]),
-                "shelter_hazard_types": shelter_types,
-                "straight_line_intersects_hazard": json_value(
-                    candidate["straight_line_intersects_hazard"]
-                ),
-                "straight_line_hazard_types": line_types,
             }
-            if resident_routes is not None:
-                route = dict(resident_routes[candidate_index])
-                route.pop("rank", None)
-                entry["road_route"] = route
-            candidates.append(entry)
+            for candidate in review_row["candidates"]
+        ]
 
-        resident_types = split_hazard_types(row.get("resident_hazard_types"))
-        hazard_groups.update(hazard_display_group(t) for t in resident_types)
+        # 本人住所のハザード。判定していない（座標が使えない・ハザード判定をしない）場合はNone
+        hazards = None
+        if review_row["hazards"] is not None:
+            hazards = [
+                {
+                    "category": hazard["category"],
+                    "key": key_by_category.get(hazard["category"]),
+                    "details": [
+                        detail for detail in
+                        (hazard_detail(hazard["category"], t) for t in hazard["types"]) if detail
+                    ],
+                }
+                for hazard in review_row["hazards"]
+            ]
 
         latitude = json_value(review_row["latitude"])
         longitude = json_value(review_row["longitude"])
@@ -465,110 +467,33 @@ def build_review_data(final_df, review_rows, hazard_layers, basemap, top_n, disa
             "has_coordinates": latitude is not None and longitude is not None,
             "match_status": json_value(row["match_status"]),
             "resident_in_hazard": json_value(row.get("resident_in_hazard")),
-            "resident_hazard_types": resident_types,
-            "hazard_groups": sorted(hazard_groups),
+            "hazards": hazards,
             "candidates": candidates,
         })
 
+    summary = dict(hazard_summary)
+    if summary.get("by_category") is not None:
+        summary["by_category"] = [
+            {**item, "key": key_by_category.get(item["category"])} for item in summary["by_category"]
+        ]
+
     return {
         "generated_at": time.strftime("%Y-%m-%d %H:%M"),
-        "top_n": top_n,
-        # 避難所データにある災害種別の全一覧。画面で対応／条件付き／非対応を区別するために使う。
-        "disaster_types": disaster_types,
+        "top_n": CANDIDATE_COUNT,
         "hazard_layers": hazard_layers,
-        # ハザード判定を実施したか（実施したときだけ結果CSVにハザード判定の列が作られる）。
-        # レビュー画面の「ハザード該当あり」の絞り込みを出すかどうかに使う。
-        "hazard_checked": "resident_in_hazard" in final_df.columns,
+        # ハザード判定を実施したか（実施しなかった場合、画面にはハザードの集計・絞り込みを出さない）
+        "hazard_checked": bool(hazard_summary["hazard_checked"]),
+        "summary": summary,
         "basemap": basemap,
         "basemap_attribution": GSI_ATTRIBUTION_TEXT,
-        # 道路に沿った参考経路の全体の状態（作成しない設定ならNone）。候補ごとの経路は residents 側。
-        "road_routes": (
-            {key: road_routes.get(key) for key in ("status", "message", "max_connection_m", "area_name",
-                                                   "routable_margin_m", "source")}
-            if road_routes else None
-        ),
         "residents": residents,
     }
 
 
-# =============================================================================
-# 道路に沿った参考経路（任意）
-# =============================================================================
-
-OSM_NOTICE_FILENAME = "osm-roads-NOTICE.txt"
-
-
-def road_routes_unavailable(message):
-    """道路に沿った参考経路を作成できなかったこと（道路データの取得失敗など）を表す結果を返す。
-    レビューHTMLでは、その旨を表示したうえで、従来の直線表示だけを使えるようにする。"""
-    return {"status": "failed", "message": str(message)}
-
-
-def verify_road_routes(road_routes, review_rows):
-    """経路の算出結果が、レビューHTMLに載せる候補と同じ並びであることを確認する。
-    食い違う場合は、別の候補の経路を表示しないよう、HTMLを作らずに止める。"""
-    if road_routes is None or road_routes.get("status") != "ok":
-        return
-    routes = road_routes.get("routes")
-    problems = []
-    if routes is None or len(routes) != len(review_rows):
-        problems.append("要支援者の件数が一致しません")
-    else:
-        for position, (resident_routes, review_row) in enumerate(zip(routes, review_rows)):
-            ranks = [candidate["rank"] for candidate in review_row["candidates"]]
-            if [route.get("rank") for route in resident_routes] != ranks:
-                problems.append(f"CSV{position + 2}行目: 候補の並びが一致しません")
-                continue
-            if review_row["latitude"] is None and resident_routes:
-                problems.append(f"CSV{position + 2}行目: 座標が無いのに経路があります")
-            for route in resident_routes:
-                if route.get("status") == "ok" and len(route.get("path") or []) < 2:
-                    problems.append(f"CSV{position + 2}行目: 候補{route.get('rank')}の経路の座標がありません")
-    if problems:
-        raise RuntimeError(
-            "道路に沿った参考経路が、レビューHTMLの候補と対応していないため、HTMLを作らずに処理を停止しました。\n"
-            + "\n".join(f"  - {problem}" for problem in problems[:20])
-        )
-
-
-def write_osm_notice(road_routes, assets_dir):
-    """道路経路の算出に使った道路データ（OpenStreetMap）の出典・ライセンスを同梱する。
-    背景地図（国土地理院）とは別のデータのため、別のファイルにする。"""
-    source = road_routes.get("source") or {}
-    (assets_dir / OSM_NOTICE_FILENAME).write_text(
-        "道路に沿った参考経路について\n"
-        "\n"
-        "review.html の「道路に沿った参考経路」は、OpenStreetMap の徒歩用の道路データを使って、\n"
-        "このレビュー成果物を作成した時点で算出したものです（経路の座標を review.html に埋め込んでいます）。\n"
-        "背景地図（国土地理院）とは別のデータです。\n"
-        "\n"
-        f"道路データの出典: {source.get('attribution', '© OpenStreetMap contributors')}\n"
-        f"ライセンス: {source.get('license', 'Open Database License (ODbL) 1.0')}\n"
-        f"詳細: {source.get('url', 'https://www.openstreetmap.org/copyright')}\n"
-        f"取得範囲: {source.get('area', '')}\n"
-        f"取得日時: {source.get('retrieved_at', '')}\n"
-        "\n"
-        "経路は道路データ上の最短の経路を参考として示すもので、通行できるか・安全かは確認していません。\n"
-        "避難経路を示すものではありません。ハザード区域との重なりも判定していません。\n",
-        encoding="utf-8",
-    )
-
-
-def road_route_points(road_routes):
-    """表示範囲の計算に使う、経路の全座標（緯度の一覧, 経度の一覧）。"""
-    latitudes, longitudes = [], []
-    if road_routes and road_routes.get("status") == "ok":
-        for resident_routes in road_routes["routes"]:
-            for route in resident_routes:
-                for lat, lon in route.get("path") or []:
-                    latitudes.append(lat)
-                    longitudes.append(lon)
-    return latitudes, longitudes
-
-
-def verify_review_data(review_data, final_df, top_n):
+def verify_review_data(review_data, final_df, review_rows):
     """HTMLへ埋め込むデータが結果CSVと一致していることを確認する。
-    1件でも食い違えばHTMLを作らずに処理を止める（CSVと見比べて判断できない資料を出さないため）。"""
+    1件でも食い違えばHTMLを作らずに処理を止める（CSVと見比べて判断できない資料を出さないため）。
+    ハザード別の人数集計は、埋め込む要支援者ごとの大分類（人 × 大分類）から数え直して照合する。"""
     problems = []
     residents = review_data["residents"]
 
@@ -585,8 +510,11 @@ def verify_review_data(review_data, final_df, top_n):
                     f"（HTML '{resident['resident_id']}' / CSV '{row['resident_id']}'）"
                 )
 
+            if resident["has_coordinates"] != (row["match_status"] == "ok"):
+                problems.append(f"{label}: 座標の有無とmatch_statusが一致しません")
+
             by_rank = {candidate["rank"]: candidate for candidate in resident["candidates"]}
-            for rank in range(1, top_n + 1):
+            for rank in range(1, CANDIDATE_COUNT + 1):
                 candidate = by_rank.get(rank)
                 csv_name = row.get(f"candidate_{rank}")
 
@@ -598,35 +526,29 @@ def verify_review_data(review_data, final_df, top_n):
                     problems.append(f"{label}: CSVの候補{rank}がHTMLにありません")
                     continue
 
-                for field, csv_column in (
-                    ("name", f"candidate_{rank}"),
-                    ("distance_m", f"distance_{rank}_m"),
-                    ("shelter_in_hazard", f"candidate_{rank}_shelter_in_hazard"),
-                    ("straight_line_intersects_hazard",
-                     f"candidate_{rank}_straight_line_intersects_hazard"),
-                ):
-                    if csv_column not in final_df.columns:
-                        continue
+                for field, csv_column in (("name", f"candidate_{rank}"), ("distance_m", f"distance_{rank}_m")):
                     if candidate[field] != json_value(row[csv_column]):
                         problems.append(
                             f"{label}: 候補{rank}の{csv_column}が一致しません"
                             f"（HTML {candidate[field]!r} / CSV {json_value(row[csv_column])!r}）"
                         )
 
-                for field, csv_column in (
-                    ("shelter_hazard_types", f"candidate_{rank}_shelter_hazard_types"),
-                    ("straight_line_hazard_types", f"candidate_{rank}_straight_line_hazard_types"),
-                ):
-                    if csv_column not in final_df.columns:
-                        continue
-                    if candidate[field] != split_hazard_types(row[csv_column]):
-                        problems.append(f"{label}: 候補{rank}の{csv_column}が一致しません")
-
-            if "resident_in_hazard" in final_df.columns:
-                if resident["resident_in_hazard"] != json_value(row["resident_in_hazard"]):
+            csv_in_hazard = json_value(row["resident_in_hazard"])
+            hazards = resident["hazards"]
+            if csv_in_hazard is None:
+                if hazards is not None or resident["resident_in_hazard"] is not None:
+                    problems.append(f"{label}: CSVでハザード判定が空欄なのにHTMLには判定結果があります")
+            else:
+                if resident["resident_in_hazard"] != csv_in_hazard or hazards is None \
+                        or bool(hazards) != csv_in_hazard:
                     problems.append(f"{label}: resident_in_hazardが一致しません")
-                if resident["resident_hazard_types"] != split_hazard_types(row["resident_hazard_types"]):
+                csv_types = sorted(t for t in str(row["resident_hazard_types"]).split(";") if t) \
+                    if not pd.isna(row["resident_hazard_types"]) else []
+                row_types = sorted({t for h in (review_rows[position]["hazards"] or []) for t in h["types"]})
+                if csv_types != row_types:
                     problems.append(f"{label}: resident_hazard_typesが一致しません")
+
+        problems += verify_summary(review_data["summary"], residents)
 
     if problems:
         raise RuntimeError(
@@ -634,6 +556,37 @@ def verify_review_data(review_data, final_df, top_n):
             + "\n".join(f"  - {problem}" for problem in problems[:20])
             + (f"\n  ほか{len(problems) - 20}件" if len(problems) > 20 else "")
         )
+
+
+def verify_summary(summary, residents):
+    """ハザード別の人数集計を、埋め込む要支援者のデータから数え直して照合した結果の食い違い一覧を返す。"""
+    problems = []
+    with_coordinates = sum(1 for resident in residents if resident["has_coordinates"])
+    expected = {
+        "total": len(residents),
+        "with_coordinates": with_coordinates,
+        "without_coordinates": len(residents) - with_coordinates,
+    }
+    if summary["hazard_checked"]:
+        judged = [resident["hazards"] for resident in residents if resident["has_coordinates"]]
+        any_hazard = sum(1 for hazards in judged if hazards)
+        expected["any_hazard"] = any_hazard
+        expected["no_hazard"] = with_coordinates - any_hazard
+        counts = {}
+        for hazards in judged:
+            for category in {hazard["category"] for hazard in hazards}:
+                counts[category] = counts.get(category, 0) + 1
+        shown = {item["category"]: item["count"] for item in summary["by_category"]}
+        for category in sorted(set(counts) | set(shown)):
+            if shown.get(category) != counts.get(category, 0):
+                problems.append(
+                    f"ハザード集計（{category}）が一致しません"
+                    f"（集計 {shown.get(category)} / 要支援者データから数え直した値 {counts.get(category, 0)}）"
+                )
+    for field, value in expected.items():
+        if summary[field] != value:
+            problems.append(f"ハザード集計の{field}が一致しません（集計 {summary[field]} / 数え直した値 {value}）")
+    return problems
 
 
 def embed_review_json(review_data):
@@ -654,23 +607,26 @@ def embed_review_json(review_data):
 # 成果物（sheltermatch_review.zip）の生成
 # =============================================================================
 
-def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n, output_dir,
-                         template_path, road_routes=None):
+def build_review_package(final_df, review_rows, hazard_area, shelters_df, hazard_summary,
+                         output_dir, template_path):
     """レビュー用のHTML・PNGを作り、ZIPへまとめてそのパスを返す。
 
     Notebook側のグローバル変数は参照せず、必要なものはすべて引数で受け取る。
 
-    final_df      結果CSV（assigned_shelters.csv）と同じ内容のDataFrame
-    review_rows   候補算出ループで作った要支援者ごとの表示用データ（候補の順位・距離を含む）
-    hazard_area   ハザード区域のGeoDataFrame（ハザード判定を行っていない場合はNone）
-    shelters_df   距離計算に使った有効な避難所のDataFrame（表示範囲と災害種別一覧の算出に使う）
-    top_n         候補の件数（TOP_N）
-    output_dir    ZIPと作業用フォルダの出力先
-    template_path review_template.html のパス
-    road_routes   道路に沿った参考経路の算出結果（road_routes.compute_road_routes の戻り値、
-                  または road_routes_unavailable() の戻り値）。作成しない設定のときはNone
+    final_df       結果CSV（assigned_shelters.csv）と同じ内容のDataFrame
+    review_rows    候補算出で作った要支援者ごとの表示用データ（候補の順位・距離・本人住所のハザードを含む）
+    hazard_area    ハザード区域のGeoDataFrame（hazard_category・hazard_type・geometry。
+                   ハザード判定を行っていない場合はNone）
+    shelters_df    距離計算に使った有効な避難所のDataFrame（表示範囲の算出に使う）
+    hazard_summary ハザード大分類別の人数集計（assignment.summarize_hazards の戻り値）
+    output_dir     ZIPと作業用フォルダの出力先
+    template_path  review_template.html のパス
     """
-    verify_road_routes(road_routes, review_rows)
+    if hazard_area is not None and "hazard_category" not in hazard_area.columns:
+        raise RuntimeError(
+            "ハザードデータに大分類（hazard_category）がありません。"
+            "hazard_loader と review_builder の版の組み合わせを確認してください。"
+        )
 
     package_dir = Path(output_dir) / REVIEW_PACKAGE_NAME
     assets_dir = package_dir / "assets"
@@ -685,31 +641,26 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
     longitudes = [row["longitude"] for row in review_rows if row["longitude"] is not None]
     latitudes += list(shelters_df["latitude"])
     longitudes += list(shelters_df["longitude"])
-    # 道路経路は直線より遠回りして表示範囲の外へ出ることがあるため、経路も背景地図の範囲に含める
-    route_latitudes, route_longitudes = road_route_points(road_routes)
-    latitudes += route_latitudes
-    longitudes += route_longitudes
 
     bundle_leaflet(assets_dir)
     display_bounds = review_display_bounds(latitudes, longitudes)
 
+    layer_specs = []
     hazard_layers = []
     if hazard_area is not None:
-        hazard_layers = render_hazard_images(hazard_area, display_bounds, assets_dir)
+        layer_specs = hazard_layer_specs(set(hazard_area["hazard_category"]))
+        hazard_layers = render_hazard_images(hazard_area, layer_specs, display_bounds, assets_dir)
 
     basemap = render_offline_basemap(display_bounds, assets_dir)
 
-    review_data = build_review_data(final_df, review_rows, hazard_layers, basemap, top_n,
-                                    disaster_type_names(shelters_df), road_routes)
-    verify_review_data(review_data, final_df, top_n)
+    review_data = build_review_data(final_df, review_rows, hazard_layers, layer_specs, basemap,
+                                    hazard_summary)
+    verify_review_data(review_data, final_df, review_rows)
 
     # 画面（HTML/CSS/JavaScript）はPython文字列として持たず、review_template.html から読み込む。
     template = Path(template_path).read_text(encoding="utf-8")
     html = template.replace("__REVIEW_DATA_JSON__", embed_review_json(review_data))
     (package_dir / "review.html").write_text(html, encoding="utf-8")
-
-    if road_routes and road_routes.get("status") == "ok":
-        write_osm_notice(road_routes, assets_dir)
 
     zip_path = Path(output_dir) / REVIEW_ZIP_FILENAME
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -730,13 +681,4 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, top_n,
         print("ハザード表示用PNG:")
         for layer in hazard_layers:
             print(f"  {layer['label']}: {layer['polygon_count']}ポリゴン → {layer['image']}")
-    # 道路経路を作成しない設定（road_routes is None）のときは、従来どおり何も表示しない
-    if road_routes is not None and road_routes.get("status") == "ok":
-        stats = road_routes["stats"]
-        print(f"道路に沿った参考経路（道路データ: OpenStreetMap）: 候補 延べ{stats['routes']}件中 "
-              f"{stats['ok']}件を表示できます（算出できなかった {stats['routes'] - stats['ok']}件は"
-              "その旨を表示します）。")
-    elif road_routes is not None:
-        print("道路に沿った参考経路は作成できませんでした。review.html にはその旨を表示し、"
-              "直線の表示だけを利用できるようにしています。")
     return zip_path

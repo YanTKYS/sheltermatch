@@ -1,8 +1,7 @@
 # 自動テスト（python -m unittest discover -s test）を、main 向けの Pull Request と main への push で実行する。
 #
 # CI で確認するのは、リポジトリ内の架空データだけで完結するテストに限る。実際の Google Colab での実行、
-# OpenStreetMap の道路データ取得、公式ハザードデータ、実ブラウザでのレビュー画面の確認（experiments/ 配下）は
-# CI の対象外で、従来どおり実機確認として行う。
+# 公式ハザードデータ、実ブラウザでのレビュー画面の確認は CI の対象外で、従来どおり実機確認として行う。
 name: CI
 
 on:
@@ -40,11 +39,11 @@ jobs:
       # （インストールに失敗したまま「skip されただけで成功」にならないようにする）
       - name: 依存関係の確認
         run: |
-          python -c "import numpy, pandas, scipy, networkx, shapely, pyproj, geopandas, matplotlib, requests, PIL; print('import OK')"
-          python -m pip list --format=freeze | grep -iE '^(numpy|pandas|scipy|networkx|shapely|pyproj|geopandas|matplotlib|requests|pillow)=='
+          python -c "import numpy, pandas, shapely, geopandas, geopy, matplotlib, requests, PIL; print('import OK')"
+          python -m pip list --format=freeze | grep -iE '^(numpy|pandas|shapely|geopandas|geopy|matplotlib|requests|pillow)=='
 
       # テスト中は外部へ接続できないようにする（到達できないプロキシを指定する）。テストはリポジトリ内の
-      # 架空データだけで完結し、行政区域・道路・ハザード・避難所などの外部データを取得しないことを確かめる。
+      # 架空データだけで完結し、ハザード・避難所などの外部データを取得しないことを確かめる。
       # skip が1件でもあれば失敗にする（必要なテストが実行されなかったことに気付けるようにする）。
       - name: 自動テスト
         env:
