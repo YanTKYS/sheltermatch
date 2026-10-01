@@ -3,7 +3,7 @@
 通常運用の Notebook は、実データで動作確認した版（タグ）の src/ を取得する。main へ変更が取り込まれても、
 取得する版（SHELTERMATCH_CODE_REF）を変えない限り、実行されるコードは変わらない。ここでは次を確認する。
 
-* 取得する版が v1.0.0 であること（版を更新するときは、このテストも意図した変更として一緒に更新する）
+* 取得する版が v1.1.0 であること（版を更新するときは、このテストも意図した変更として一緒に更新する）
 * main の src/ を取得先として使っていないこと
 * hazard_loader・shelter_assignment・review_builder・review_template.html が、すべて同じ取得元から取得されること
   （道路経路のモジュール road_routes は取得しない）
@@ -26,7 +26,7 @@ from pathlib import Path
 NOTEBOOK_PATH = Path(__file__).resolve().parent.parent / "sheltermatch.ipynb"
 MODULE_CELL_TITLE = "# ===== 外部モジュール準備 ====="
 
-EXPECTED_REF = "v1.0.0"
+EXPECTED_REF = "v1.1.0"
 EXPECTED_BASE_URL = f"https://raw.githubusercontent.com/YanTKYS/sheltermatch/{EXPECTED_REF}/src"
 
 # 取得するファイルと、src/ が持つ API バージョン（Notebook 側の想定値と一致している必要がある）。
@@ -160,7 +160,7 @@ class ModuleCellRun:
 class ModuleSourceStaticTest(unittest.TestCase):
     """Notebook 内の文字列・代入の確認。"""
 
-    def test_取得する版はv1_0_0(self):
+    def test_取得する版はv1_1_0(self):
         nodes = assignments("SHELTERMATCH_CODE_REF")
         self.assertEqual(len(nodes), 1, "SHELTERMATCH_CODE_REF はNotebook全体で1か所だけで定義する")
         self.assertEqual(ast.literal_eval(nodes[0].value), EXPECTED_REF)
@@ -242,8 +242,8 @@ class ModuleSourceRunTest(unittest.TestCase):
         self.assertNotIn("main", message)
 
     def test_v1_0_0時点の旧APIのモジュールとの組み合わせでは止まる(self):
-        # v1.1.0 の Notebook は、v1.0.0 の src/（hazard_loader API 1・review_builder API 2）では動かさない。
-        # 取得する版を更新する前に新しい Notebook を実行しても、古いモジュールのまま処理を続けない。
+        # v1.1.0 の Notebook は、v1.0.0 の src/（hazard_loader API 1・review_builder API 2）のような旧APIの
+        # モジュールとは組み合わせて動かさない（古いモジュールのまま処理を続けない）。
         contents = module_contents({"hazard/hazard_loader.py": 1, "review/review_builder.py": 2})
         with ModuleCellRun(contents) as run:
             with self.assertRaises(RuntimeError) as caught:

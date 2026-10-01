@@ -73,13 +73,13 @@ python3 -m unittest discover -s test
 止まることを確認する。ブラウザでの見た目・操作は自動テストの対象外で、実機確認として行う。
 
 `test_notebook_end_to_end.py` は、`sheltermatch.ipynb` のセルを外部通信なしで最後まで実行して、結果CSV・レビューZIP・
-集計が揃うことを確認する。Notebook のセルと取得先の版（`SHELTERMATCH_CODE_REF`。現在は `v1.0.0`）は変更せず、
+集計が揃うことを確認する。Notebook のセルと取得先の版（`SHELTERMATCH_CODE_REF`。現在は `v1.1.0`）は変更せず、
 GitHub からの取得だけを作業ツリーの `src/` へ差し替える（`notebook_harness.py`）。外部通信は GitHub の取得と BODIK API
 （いずれも差し替え）だけで、OpenStreetMap 等の道路データを取得しないこと、Notebook に道路経路・災害種別・可変の候補数
 の記述が無いことも確認する。
 
 `test_notebook_module_source.py` は、`sheltermatch.ipynb` が Google Colab 実行時に取得する外部モジュール（`src/`）の
-取得先の回帰テスト。取得する版（`SHELTERMATCH_CODE_REF`）が `v1.0.0` であること、`main` の `src/` を取得先に
+取得先の回帰テスト。取得する版（`SHELTERMATCH_CODE_REF`）が `v1.1.0` であること、`main` の `src/` を取得先に
 使わないこと、`hazard_loader.py`・`shelter_assignment.py`・`review_builder.py`・`review_template.html` が同じ取得元から
 取得されること（`road_routes.py` は取得しない）、API互換性の確認（v1.0.0 時点の旧APIのモジュールとの組み合わせを含め、
 互換性のないモジュールでは止まる）と取得失敗時の表示を確認する。「外部モジュール

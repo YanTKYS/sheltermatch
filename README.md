@@ -161,9 +161,11 @@ assigned_shelters.csv / sheltermatch_review.zip
 | `docs/` | データ取得手順・現状整理などの詳細ドキュメント |
 
 `sheltermatch.ipynb` は、Google Colab での実行時に `src/` 配下のファイルを GitHub から取得して読み込みます。
-取得するのは実データで動作確認した版（タグ。`SHELTERMATCH_CODE_REF`）で、実行時に「外部モジュール: <版>」と
-表示します。`main` へ変更が入っても、取得する版を更新するまで実行されるコードは変わりません（版の更新方法は
-[docs/project-status.md](docs/project-status.md) の「6.4」）。
+取得するのは版（タグ。`SHELTERMATCH_CODE_REF`）で固定しており、現在は `v1.1.0` です。実行時に
+「外部モジュール: v1.1.0」と表示します。`main` へ変更が入っても、取得する版を更新するまで実行されるコードは
+変わりません（版の更新方法は [docs/project-status.md](docs/project-status.md) の「6.4」）。
+PR #49 より前に Google Drive 等へ保存した Notebook は、取得する版が `v1.0.0` のままの場合があります。通常運用では
+最新の `main` の Notebook を使い、実行時に「外部モジュール: v1.1.0」と表示されることを確認してください。
 
 ## テスト
 
