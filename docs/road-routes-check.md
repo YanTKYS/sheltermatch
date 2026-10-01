@@ -1,5 +1,12 @@
 # 道路に沿った参考経路の確認記録
 
+> **この文書は v1.0.0 時点の確認記録である。** 道路に沿った参考経路は、担当部署では実際の避難経路を本人への聞き取り等で
+> 判断するため、v1.1.0 の通常運用から外した（機能が失敗したためではない）。現行コード（`src/review/road_routes.py`、
+> `test/test_road_routes.py`、`experiments/road_routes/`）からは削除しており、実装と確認用スクリプトは `v1.0.0` タグで
+> 参照できる。外した経緯と将来の再利用の可能性は
+> [docs/notes/v1.0.0-extended-features.md](./notes/v1.0.0-extended-features.md) を参照。以下の本文に出てくる
+> `ENABLE_ROAD_ROUTES`・`experiments/road_routes/` 等は、v1.0.0 の内容である。
+
 レビュー用HTMLへ追加した「道路に沿った参考経路」（`ENABLE_ROAD_ROUTES = True`）を、実際の道路データと
 架空の要支援者データで確認した記録。
 

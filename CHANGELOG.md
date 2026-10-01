@@ -203,3 +203,76 @@
   場合は、取得対象の版・URL・通信エラーの内容を表示する）
 - 取得先の回帰テスト（`test/test_notebook_module_source.py`）を追加した
 - 避難所候補の算出・ハザード判定・道路経路・レビュー画面・CSVの形式・API互換性の値は変更なし
+
+## 2026-10-01（v1.1.0 候補: 担当部署の業務要件への絞り込み）
+
+詳細: [docs/project-status.md](docs/project-status.md) の「2」「4」「6」、[docs/notes/v1.0.0-extended-features.md](docs/notes/v1.0.0-extended-features.md)
+
+担当部署の実運用レビュー（必要なのは直線距離／実際の経路は職員が聞き取りで判断／ハザードは本人住所／ハザード別の人数集計／
+CSVは情報が多すぎる／避難所の災害種別対応は不要）を受けて、機能追加ではなく、必要な情報へ絞り込む縮退・簡素化を行った。
+v1.1.0 の目的は「要支援者本人の住所についてハザードの影響を確認し、直線距離が近い避難所候補を職員へ提示する」こと。
+この変更は v1.1.0 候補で、`SHELTERMATCH_CODE_REF` は `v1.0.0` のまま（`v1.1.0` タグ作成・取得先の更新は、マージ後の
+リリース作業で行う）。
+
+### Changed
+
+- 結果CSV（`assigned_shelters.csv`）の正式な出力列を次の14列へ簡素化した（この順）:
+  `resident_id`, `address`, `latitude`, `longitude`, `geocode_status`, `match_status`, `resident_in_hazard`,
+  `resident_hazard_types`, `candidate_1`, `distance_1_m`, `candidate_2`, `distance_2_m`, `candidate_3`, `distance_3_m`。
+  入力CSVに独自の列があれば、14列の後ろへそのまま残す。ハザード判定をしない場合も14列のままで、ハザード列は空欄
+- ハザード判定の対象を、要支援者本人の地点だけにした（`resident_in_hazard` / `resident_hazard_types`）。
+  読み込み・正規化（公式ハザードデータの種別判定・詳細区分・ジオメトリの修復）は従来どおり
+- 候補は引き続き `geopy.distance.geodesic` の直線距離順（距離が同じ場合は避難所名順）。候補数は3件固定とし、
+  利用者設定の `TOP_N` を廃止した（利用者設定は `ENABLE_HAZARD_CHECK` と `SHELTER_SOURCE` の2つ）
+- 避難所データは、候補の算出に名称・緯度・経度だけを使う（BODIKからの取得の仕組みは維持。`災害種別_` 列は読み捨てる）
+- 前回の結果CSVを再投入した場合に置き換える列に、旧版（v1.0.0）の列（`candidate_N_disaster_support`・
+  `candidate_N_shelter_*`・`candidate_N_straight_line_*`）を加えた（職員が追加した列は従来どおり残す）
+- レビュー画面を簡素化した。候補表は順位・避難所名・直線距離。本人地点・本人住所のハザード・候補1〜3と直線距離を表示し、
+  地図には本人地点・候補避難所1〜3・本人→候補の直線・ハザード区域を描く。線は直線であり、実際に通る経路ではないことを
+  画面に明示する
+- ハザード区域の地図画像・色を、表示文字列の前方一致ではなく、読み込み時に付けたハザードの大分類で決めるようにした
+- 外部モジュールを1つ追加した（`src/assignment/shelter_assignment.py`。候補算出・本人住所のハザード判定・集計・結果CSVの
+  組み立て。Notebookのセルにあった同等の処理を移した）。API互換性の値は `hazard_loader` 1→2、`review_builder` 2→3、
+  `assignment` 1（新規）。このため v1.1.0 候補のNotebookは、取得先が `v1.0.0` のままでは旧モジュールとの組み合わせで
+  止まる（意図した動作。リリース作業で取得先を更新する）
+
+### Added
+
+- ハザード大分類別の人数集計: 総件数・座標あり・座標未取得・いずれかに該当・ハザード該当なし・大分類別（津波・高潮・洪水・
+  土砂災害）の人数を、Notebookの結果表示とレビュー画面の上部に表示する。人 × 大分類で重複を除いて数え（同じ大分類の
+  複数ポリゴンは1人、複数の大分類に該当する人は各分類に1人ずつ）、「いずれかに該当」は人物単位で重複なし。「ハザード該当なし」は
+  有効な座標で判定して該当が無かった人だけで、座標未取得は含めない。各分類の合計が「いずれかに該当」と一致しない場合が
+  あることを画面に表示する。集計は、ハザードデータに付けた大分類（`hazard_category`）を使い、表示文字列を解析しない
+- 読み込んだハザードの各ポリゴンへ、大分類 `hazard_category` を付ける（`hazard_loader`）
+- テスト: 候補算出・本人住所のハザード判定・集計・結果CSV（`test_shelter_assignment.py`）、ハザード読込の大分類
+  （`test_hazard_loader.py`）、レビューHTML（`test_review_html.py`）、Notebookの外部通信なしの通し実行
+  （`test_notebook_end_to_end.py`、作業ツリーの `src/` を使うハーネス `notebook_harness.py`）。いずれも完全な架空データ
+- `docs/notes/v1.0.0-extended-features.md`: v1.0.0 で実装・確認し、通常運用から外した機能の記録
+
+### Removed
+
+- 道路に沿った参考経路（OpenStreetMap / OSMnx）と道路上距離を、通常運用から外した。`ENABLE_ROAD_ROUTES`・osmnx の導入・
+  道路データの取得・レビューZIPの道路経路データと `osm-roads-NOTICE.txt` を廃止し、`src/review/road_routes.py`・
+  `test/test_road_routes.py`・`experiments/road_routes/` を削除した（他から参照されていないことを確認済み。実装は
+  `v1.0.0` タグに残っている。機能が失敗したためではなく、担当部署では実際の経路を本人への聞き取り等で判断するため不要と
+  判断した）
+- 候補避難所地点のハザード判定、本人→候補直線のハザード交差判定を廃止した（`candidate_N_shelter_in_hazard`・
+  `candidate_N_shelter_hazard_types`・`candidate_N_straight_line_intersects_hazard`・
+  `candidate_N_straight_line_hazard_types` の各列、レビュー画面の表示・絞り込み）
+- 避難所の災害種別対応情報の変換・保持・出力を廃止した（`candidate_N_disaster_support` 列、レビュー画面の「災害種別対応」）
+- レビュー画面から、道路経路の選択UI・道路経路算出不可の表示と絞り込み・道路上の距離・避難所地点のハザード・直線交差の
+  ハザード・災害種別対応の表示を削除した
+
+### Documentation
+
+- README を、できること（本人住所のハザード確認・近い避難所候補1〜3・直線距離・ハザード別の人数集計）を中心に簡潔にした
+- `docs/project-status.md` の目的・仕様を担当部署の業務要件へ更新し、通常運用の現行仕様と過去の技術検証（v1.0.0）を分けた。
+  v1.1.0 のリリース手順を追記した
+- `docs/pre-production-check-2026-09-28.md`・`docs/hazard-data.md`・`test/README.md` を現行仕様へ更新し、
+  `docs/road-routes-check.md`・`docs/operation-check.md`・`docs/performance-test.md` に v1.0.0 時点の記録である旨を追記した
+
+### 変更していないもの
+
+- `address_geocode.ipynb`（ABR照合ロジック・住居表示対応・方書対応・3段目の安全な除外ロジック）と住所変換の結果
+- `v1.0.0` タグ、`SHELTERMATCH_CODE_REF = "v1.0.0"`（`v1.1.0` タグは未作成）
+- 座標が使えない行の扱い（行を削除せず、`match_status` に理由を残し、ハザード・候補・距離は空欄）
