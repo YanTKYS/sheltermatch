@@ -164,8 +164,10 @@ assigned_shelters.csv / sheltermatch_review.zip
 取得するのは版（タグ。`SHELTERMATCH_CODE_REF`）で固定しており、現在は `v1.1.0` です。実行時に
 「外部モジュール: v1.1.0」と表示します。`main` へ変更が入っても、取得する版を更新するまで実行されるコードは
 変わりません（版の更新方法は [docs/project-status.md](docs/project-status.md) の「6.4」）。
-PR #49 より前に Google Drive 等へ保存した Notebook は、取得する版が `v1.0.0` のままの場合があります。通常運用では
-最新の `main` の Notebook を使い、実行時に「外部モジュール: v1.1.0」と表示されることを確認してください。
+`v1.1.0` は、Google Colab での実機確認（結果CSV・レビューZIP）が完了するまで担当部署へ配布しません
+（リリースの進め方は [docs/project-status.md](docs/project-status.md) の「6.4」）。配布後は、PR #49 より前に
+Google Drive 等へ保存した Notebook は取得する版が `v1.0.0` のままの場合があるため、最新の `main` の Notebook を使い、
+実行時に「外部モジュール: v1.1.0」と表示されることを確認してください。
 
 ## テスト
 

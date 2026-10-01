@@ -285,16 +285,17 @@ v1.1.0 の目的は「要支援者本人の住所についてハザードの影�
 
 - `sheltermatch.ipynb` が実行時に取得する外部モジュール（`src/`）を `v1.0.0` から `v1.1.0` へ更新した
   （`SHELTERMATCH_CODE_REF = "v1.1.0"`。`hazard_loader`・`shelter_assignment`・`review_builder`・`review_template` の
-  4ファイルをすべて同じ版から取得する。実行時に「外部モジュール: v1.1.0」と表示する）。`v1.1.0` タグは PR #49
-  （v1.1.0 候補）のマージコミットを指す。Notebookのそのほかの処理、API互換性の値、出力仕様は変更なし
+  4ファイルをすべて同じ版から取得する。実行時に「外部モジュール: v1.1.0」と表示する）。現在の `v1.1.0` タグは PR #49
+  （v1.1.0 候補）のマージコミットを指しており、PR #50 のマージ後に付け直して最終確定する（v1.1.0 は未配布）。
+  Notebookのそのほかの処理、API互換性の値、出力仕様は変更なし
 - 取得先の回帰テスト（`test/test_notebook_module_source.py`）とNotebookの通し実行テスト
   （`test/test_notebook_end_to_end.py`）の期待値を `v1.1.0` に更新した（外部通信なし。通し実行は作業ツリーの `src/` を使う
   従来の方式のまま）
 
 ### Documentation
 
-- 通常運用のNotebookが `v1.1.0` を取得すること、v1.1.0 のリリース状態（PRレビュー・マージ・タグ作成は完了、取得先の更新は
-  このPR、Google Colab での最終スモーク確認はこのPRのマージ後）を README・`docs/project-status.md`・
-  `docs/pre-production-check-2026-09-28.md` に反映した
+- Notebookが `v1.1.0` を取得すること、v1.1.0 のリリース状態（PR #49 のマージは完了、`v1.1.0` タグは一旦作成済みだが
+  最終確定前、取得先の更新は PR #50、PR #50 のマージ後にタグを付け直し、Google Colab で実機確認してから担当部署へ配布。
+  現時点では未配布）を README・`docs/project-status.md`・`docs/pre-production-check-2026-09-28.md` に反映した
 - PR #49 より前に保存したNotebookは取得先が `v1.0.0` のままの場合があるため、最新の `main` のNotebookを使い、
   「外部モジュール: v1.1.0」の表示を確認する旨を追記した
