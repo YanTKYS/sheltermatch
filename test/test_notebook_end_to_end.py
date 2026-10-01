@@ -1,6 +1,6 @@
 """sheltermatch.ipynb を、外部通信なしで最後まで実行する回帰テスト（完全な架空データ）。
 
-Notebook のセルは書き換えず、取得先の版（SHELTERMATCH_CODE_REF=v1.0.0）も変えずに、
+Notebook のセルは書き換えず、取得先の版（SHELTERMATCH_CODE_REF=v1.1.0）も変えずに、
 GitHub からの取得だけを作業ツリーの src/ へ差し替えて実行する（test/notebook_harness.py）。
 新しい src/ と Notebook の組み合わせで、結果CSV・レビューZIP・集計が揃うことを確認する。
 
@@ -89,7 +89,7 @@ class NotebookEndToEndWithHazardTest(unittest.TestCase):
     def test_外部通信はGitHubの取得とBODIK_APIだけ_道路データは取得しない(self):
         for url in self.run_.urls:
             self.assertTrue(
-                url.startswith("https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.0.0/src/")
+                url.startswith("https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.1.0/src/")
                 or url.startswith("https://data.bodik.jp/api/action/datastore_search"),
                 url,
             )
@@ -101,8 +101,8 @@ class NotebookEndToEndWithHazardTest(unittest.TestCase):
             "hazard/hazard_loader.py", "assignment/shelter_assignment.py",
             "review/review_builder.py", "review/review_template.html"]))
 
-    def test_取得ref_v1_0_0のまま(self):
-        self.assertEqual(self.run_.namespace["SHELTERMATCH_CODE_REF"], "v1.0.0")
+    def test_v1_1_0のsrcを取得する(self):
+        self.assertEqual(self.run_.namespace["SHELTERMATCH_CODE_REF"], "v1.1.0")
 
     def test_ダウンロードされるのはCSVとZIP(self):
         self.assertEqual(self.run_.files.downloads, ["assigned_shelters.csv", "sheltermatch_review.zip"])
