@@ -332,3 +332,22 @@ v1.1.0 の目的は「要支援者本人の住所についてハザードの影�
   現時点では未配布）を README・`docs/project-status.md`・`docs/pre-production-check-2026-09-28.md` に反映した
 - PR #49 より前に保存したNotebookは取得先が `v1.0.0` のままの場合があるため、最新の `main` のNotebookを使い、
   「外部モジュール: v1.1.0」の表示を確認する旨を追記した
+
+## 2026-10-03（v1.2.0 運用版への切替）
+
+詳細: [docs/project-status.md](docs/project-status.md) の「6.4」
+
+### Changed
+
+- `sheltermatch.ipynb` と `address_geocode.ipynb` が取得する版（`SHELTERMATCH_CODE_REF`）を `v1.1.0` から `v1.2.0` へ変更した
+- v1.2.0 では、`src/` に加えて、自治体設定JSON（`configs/<CONFIG_NAME>.json`）と設定読込モジュール
+  （`src/config/municipality_config.py`）も、同じ `v1.2.0` タグから取得する（`main` とタグを混在させない）
+- 既定の `itoman-city` では、`ENABLE_HAZARD_CHECK = true` が設定ファイルから適用される
+- 業務仕様（候補1〜3・直線距離順・本人住所のみのハザード判定・結果CSV14列・`address_geocode` の5列・`review.html`）は
+  v1.1.0 から変更なし。`v1.0.0`・`v1.1.0` タグは変更しない
+
+### Documentation
+
+- README、`docs/project-status.md`、`docs/pre-production-check-2026-09-28.md`、`address_geocode.ipynb` の説明等を、
+  現在の v1.2.0 運用状態（自治体設定JSON導入済み、`v1.2.0` タグは本PRのマージ後に作成、Google Colab 実機確認後に配布）へ
+  更新した。過去の記録（v1.0.0 / v1.1.0 時点の確認記録・履歴）は保持している

@@ -17,6 +17,7 @@ import copy
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -35,6 +36,8 @@ mc = load_src_module("config/municipality_config.py", "municipality_config_under
 # 従来、Notebookに固定されていた糸満市の値（設定ファイルへ移したあとも変わっていないことの確認用）
 EXPECTED_ITOMAN_RESOURCE_ID = "3132a0a4-f522-4b2d-bf18-f106d8b3a5ae"
 RAW_REPO_URL = "https://raw.githubusercontent.com/YanTKYS/sheltermatch/test-ref"
+# 通常運用のNotebook（sheltermatch.ipynb・address_geocode.ipynb）が、外部モジュールと設定ファイルを取得する版（タグ）
+EXPECTED_RELEASE_REF = "v1.2.0"
 
 
 def valid_config(**sections):
@@ -401,6 +404,26 @@ class SheltermatchNotebookConfigTest(unittest.TestCase):
                       cell_starting_with(REPO / "sheltermatch.ipynb", "# ===== 設定ファイル読込"))
 
 
+class ReleaseRefTest(unittest.TestCase):
+    """通常運用のNotebookが取得する版（タグ）。版を更新するときは、このテストも意図した変更として更新する。"""
+
+    @staticmethod
+    def code_ref(path):
+        matches = re.findall(r'(?m)^SHELTERMATCH_CODE_REF = "([^"]+)"', "\n".join(notebook_cells(path)))
+        assert len(matches) == 1, path
+        return matches[0]
+
+    def test_通常運用の2つのNotebookは同じ版を取得する(self):
+        self.assertEqual(self.code_ref(REPO / "sheltermatch.ipynb"), EXPECTED_RELEASE_REF)
+        self.assertEqual(self.code_ref(REPO / "address_geocode.ipynb"), EXPECTED_RELEASE_REF)
+
+    def test_比較実験は通常運用の版に固定されない(self):
+        # experiments/ の比較実験は、通常の業務Notebookとは別で、main の比較ロジック・設定を取得する
+        source = "\n".join(notebook_cells(GSI_NOTEBOOK))
+        self.assertIn('COMPARE_LOGIC_REF = "main"', source)
+        self.assertNotIn("SHELTERMATCH_CODE_REF", source)
+
+
 class AddressGeocodeNotebookConfigTest(unittest.TestCase):
     """address_geocode.ipynb の「設定」セル（自治体名・自治体コード・都道府県名）。"""
 
@@ -415,7 +438,7 @@ class AddressGeocodeNotebookConfigTest(unittest.TestCase):
 
     def serve_repo(self, config_name_to_content):
         """作業ツリーの読込モジュールと、指定した設定ファイルを返すURLの辞書（版のタグは問わない）。"""
-        ref_url = "https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.1.0"
+        ref_url = f"https://raw.githubusercontent.com/YanTKYS/sheltermatch/{EXPECTED_RELEASE_REF}"
         files = {f"{ref_url}/src/config/municipality_config.py":
                  (REPO / "src" / "config" / "municipality_config.py").read_bytes()}
         for name, content in config_name_to_content.items():
@@ -446,6 +469,14 @@ class AddressGeocodeNotebookConfigTest(unittest.TestCase):
             self.run_settings(self.serve_repo({}))
         self.assertEqual(type(caught.exception).__name__, "ConfigError")
         self.assertIn("configs/itoman-city.json", str(caught.exception))
+
+    def test_外部モジュールと設定ファイルを同じ版から取得する(self):
+        namespace, _, github = self.run_settings(
+            self.serve_repo({"itoman-city": ITOMAN_CONFIG_PATH.read_bytes()}))
+        self.assertEqual(namespace["SHELTERMATCH_CODE_REF"], EXPECTED_RELEASE_REF)
+        prefix = f"https://raw.githubusercontent.com/YanTKYS/sheltermatch/{EXPECTED_RELEASE_REF}/"
+        self.assertEqual(sorted(github.urls), [prefix + "configs/itoman-city.json",
+                                               prefix + "src/config/municipality_config.py"])
 
     def test_読込モジュールが取得できなければ止まる(self):
         with self.assertRaises(RuntimeError):

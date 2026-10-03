@@ -17,7 +17,7 @@
 
 | | |
 | --- | --- |
-| **入力** | 要支援者一覧CSV（5列）＋ 避難所一覧（BODIK Data API）＋ ハザード区域データ（任意） |
+| **入力** | 要支援者一覧CSV（5列）＋ 避難所一覧（設定した自治体のBODIK Data API）＋ ハザード区域データ（任意） |
 | **出力** | `assigned_shelters.csv`（正式な成果物。14列）と `sheltermatch_review.zip`（地図で確認する補助成果物） |
 
 ### 行わないこと
@@ -45,8 +45,9 @@ resident_id,address,latitude,longitude,geocode_status
 
 ### 避難所一覧
 
-BODIK Data API から糸満市の自治体標準オープンデータセット（指定緊急避難場所）を取得します。
-取得に失敗した場合は、CSVアップロードへ自動的に切り替わります。使うのは **名称・緯度・経度** だけです
+設定ファイル（[`configs/<CONFIG_NAME>.json`](configs/README.md)）で指定した自治体の BODIK resource_id から、
+BODIK Data API の自治体標準オープンデータセット（指定緊急避難場所）を取得します。既定の設定は `itoman-city` で、
+現在リポジトリに用意している実設定は糸満市のものです。取得に失敗した場合は、CSVアップロードへ自動的に切り替わります。使うのは **名称・緯度・経度** だけです
 （避難所の災害種別対応などの列は使いません）。
 
 ### ハザード区域データ（任意）
@@ -118,19 +119,14 @@ BODIK Data API から糸満市の自治体標準オープンデータセット�
 ## 実行方法
 
 1. `sheltermatch.ipynb` を Google Colab で開く
-2. 冒頭の「利用者設定」セルを確認する（糸満市の通常利用では、**変更不要**です）
+2. 冒頭の「利用者設定」セルを確認する（既定の `itoman-city`（糸満市）の通常利用では、**変更不要**です）
 
    ```python
    CONFIG_NAME = "itoman-city"   # 自治体の設定名（configs/itoman-city.json）。別の自治体で使うときだけ変更
-   ENABLE_HAZARD_CHECK = False   # Notebookの既定値。設定ファイルに値があればそちらが優先される
-   SHELTER_SOURCE = "api"        # Notebookの既定値。"api"=BODIKから取得 / "csv"=CSVをアップロード
    ```
 
-   自治体名・BODIKのデータセット・本人住所のハザード確認の有無などは、設定ファイル
-   [configs/itoman-city.json](configs/itoman-city.json) にまとめています（糸満市の設定では
-   `ENABLE_HAZARD_CHECK` は `true` になり、実行時に最終的な値と設定元を表示します）。設定ファイルを
-   取得・解釈できない場合は、既定値で続行せず原因を表示して止まります。詳しくは
-   [configs/README.md](configs/README.md) を参照してください。
+   自治体名・BODIKのデータセット・本人住所のハザード確認の有無などは、設定ファイルにまとめています。
+   設定の項目・優先順位・別の自治体で使う方法は [configs/README.md](configs/README.md) を参照してください。
 
 3. 「ランタイム → すべてのセルを実行」
 4. 画面の指示に従って、要支援者CSV（と、必要ならハザードデータ）をアップロードする
@@ -171,13 +167,14 @@ assigned_shelters.csv / sheltermatch_review.zip
 
 `sheltermatch.ipynb` は、Google Colab での実行時に `src/` 配下のファイルと、自治体の設定ファイル
 （`configs/<CONFIG_NAME>.json`）を GitHub から取得して読み込みます（設定ファイルも同じ版から取得します）。
-取得するのは版（タグ。`SHELTERMATCH_CODE_REF`）で固定しており、現在は `v1.1.0` です。実行時に
-「外部モジュール: v1.1.0」と表示します。`main` へ変更が入っても、取得する版を更新するまで実行されるコードは
-変わりません（版の更新方法は [docs/project-status.md](docs/project-status.md) の「6.4」）。
-`v1.1.0` は、Google Colab での実機確認（結果CSV・レビューZIP）が完了するまで担当部署へ配布しません
-（リリースの進め方は [docs/project-status.md](docs/project-status.md) の「6.4」）。配布後は、PR #49 より前に
-Google Drive 等へ保存した Notebook は取得する版が `v1.0.0` のままの場合があるため、最新の `main` の Notebook を使い、
-実行時に「外部モジュール: v1.1.0」と表示されることを確認してください。
+取得するのは版（タグ。`SHELTERMATCH_CODE_REF`）で固定しており、現在は `v1.2.0` です（`address_geocode.ipynb` が
+設定ファイルを取得する版も同じです）。実行時に「外部モジュール: v1.2.0」と表示します。`main` へ変更が入っても、
+取得する版を更新するまで実行されるコードは変わりません（版の更新方法は
+[docs/project-status.md](docs/project-status.md) の「6.4」）。
+`v1.2.0` は、`v1.2.0` タグの作成と Google Colab での実機確認（結果CSV・レビューZIP）が完了するまで担当部署へ配布しません
+（リリースの進め方は [docs/project-status.md](docs/project-status.md) の「6.4」）。それ以前に Google Drive 等へ保存した
+Notebook は、取得する版が古いままの場合があるため、最新の `main` の Notebook を使い、実行時に
+「外部モジュール: v1.2.0」と表示されることを確認してください。
 
 ## テスト
 
@@ -208,6 +205,8 @@ python3 -m unittest discover -s test
 
 v1.1.0 は、担当部署の業務要件に合わせて、必要な情報へ絞り込んだ版です（機能の追加ではありません）。
 v1.0.0 で実装・確認した道路経路・避難所側のハザード判定・避難所の災害種別対応などは、通常運用から外しました。
+v1.2.0 は、この業務要件を維持したまま、自治体ごとの設定ファイル（`configs/`）を導入した版です
+（業務仕様の変更はありません）。
 内容と理由は [docs/notes/v1.0.0-extended-features.md](docs/notes/v1.0.0-extended-features.md)、変更点は
 [CHANGELOG.md](CHANGELOG.md) を参照してください。
 

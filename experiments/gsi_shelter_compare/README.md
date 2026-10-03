@@ -1,6 +1,6 @@
 # BODIK と国土地理院（GSI）の指定緊急避難場所データの比較実験
 
-`sheltermatch` が現在使っている BODIK の指定緊急避難場所データ（糸満市）と、国土地理院が地理院タイルとして
+`sheltermatch` が現在使っている BODIK の指定緊急避難場所データ（設定ファイルで指定した自治体。既定は `itoman-city`＝糸満市）と、国土地理院が地理院タイルとして
 公開している指定緊急避難場所データ（`skhb01`〜`skhb08`）を比べ、**件数・施設・名称・住所・座標にどの程度差があるか**
 を確認するための実験です。
 
@@ -26,7 +26,7 @@
 公式資料:
 
 * [国土地理院 地理院タイル一覧（指定緊急避難場所のタイル仕様・注意事項）](https://maps.gsi.go.jp/development/ichiran.html)
-* [BODIK 糸満市 指定緊急避難場所データセット](https://data.bodik.jp/dataset/472107_evacuation_space)
+* [BODIK 糸満市 指定緊急避難場所データセット（既定の `itoman-city` の場合）](https://data.bodik.jp/dataset/472107_evacuation_space)
 
 ## ファイル構成
 
