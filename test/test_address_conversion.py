@@ -3,7 +3,8 @@
 実データ（要支援者名簿）で実際に起こり得る住所表記が、同じ地番・同じ住居・同じ座標へ変換されることと、
 別の住所を同一視していないことを確認する。Notebookのセル（設定 → ABRマスター準備 → 住所変換ロジック
 定義 → 住所CSV変換・出力）をそのまま順に実行し、Colab固有の操作（ファイルのアップロード・ダウンロード・
-表示）だけを差し替える。Notebook側を直した場合もこのテストがそのまま効く。
+表示）と、「設定」セルが行うGitHubからの設定ファイル・読込モジュールの取得（作業ツリーの内容を返す。
+外部へは通信しない）だけを差し替える。Notebook側を直した場合もこのテストがそのまま効く。
 
 ABRの公式データ（町字・地番・地番位置参照・住居表示の街区／住居と位置参照）はコミットできないため、
 実データと同じ列構成の**完全な架空データ**をテスト内で作り、ZIPにしてアップロードする。住居表示データは
@@ -23,6 +24,7 @@ import types
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 import pandas as pd
 
@@ -222,6 +224,32 @@ def residential_zips(blocks=BLOCKS, block_positions=BLOCK_POSITIONS, residences=
 # Notebookの実行（Colab固有の操作だけを差し替える）
 # =============================================================================
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+GITHUB_RAW_PREFIX = "https://raw.githubusercontent.com/YanTKYS/sheltermatch/"
+
+
+class FakeResponse:
+    def __init__(self, content=b"", status_code=200):
+        self.content = content
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def fake_requests_get(url, *args, **kwargs):
+    """requests.get の代わり。「設定」セルが取得する設定ファイル・読込モジュール（GitHub raw）には、版（タグ）に
+    よらず作業ツリーの内容を返す。それ以外のURLへの通信は、テストを失敗させる。"""
+    if not url.startswith(GITHUB_RAW_PREFIX):
+        raise AssertionError(f"テスト中に想定していない外部通信です: {url}")
+    relative = url[len(GITHUB_RAW_PREFIX):].split("/", 1)[1]
+    target = REPO_ROOT / relative
+    if not target.is_file() or relative.split("/", 1)[0] not in ("src", "configs"):
+        return FakeResponse(status_code=404)
+    return FakeResponse(target.read_bytes())
+
+
 class FakeFiles:
     """google.colab.files の代わり。upload() は指定したファイルを順に返し、download() は記録だけする。"""
 
@@ -280,7 +308,13 @@ class NotebookRun:
         return "\n".join(self.printed)
 
     def run_cell(self, index):
-        with fake_google_colab(self.files):
+        # 「設定」セルは読込モジュールを sheltermatch_modules/ へ保存するため、リポジトリを汚さないよう一時フォルダで実行する
+        # （ほかのセルは、呼び出し側が用意したフォルダで実行する）
+        with contextlib.ExitStack() as stack:
+            if index == SETTINGS_CELL:
+                stack.enter_context(contextlib.chdir(stack.enter_context(tempfile.TemporaryDirectory())))
+            stack.enter_context(fake_google_colab(self.files))
+            stack.enter_context(mock.patch("requests.get", fake_requests_get))
             exec(compile(self.cells[index], f"{self.path}#cell{index}", "exec"), self.env)
 
     def geocode(self, address):

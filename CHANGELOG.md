@@ -277,6 +277,39 @@ v1.1.0 の目的は「要支援者本人の住所についてハザードの影�
 - `v1.0.0` タグ、`SHELTERMATCH_CODE_REF = "v1.0.0"`（`v1.1.0` タグは未作成）
 - 座標が使えない行の扱い（行を削除せず、`match_status` に理由を残し、ハザード・候補・距離は空欄）
 
+## 2026-10-03（自治体ごとの設定ファイルの導入）
+
+### Added
+
+- 自治体ごとの設定ファイル `configs/itoman-city.json`（糸満市）と、その読込・検証モジュール
+  `src/config/municipality_config.py` を追加した。自治体名・自治体コード・BODIKのresource_id・通常使う
+  Notebook設定（`ENABLE_HAZARD_CHECK`・`SHELTER_SOURCE`・比較実験の `TILE_RING` 等）をまとめ、別の自治体では
+  `configs/other-city.json` を追加して `CONFIG_NAME` を変更すればよい構成にした（[configs/README.md](configs/README.md)）
+- `sheltermatch.ipynb` に「設定ファイル読込」セルを追加した。実行時に、対象自治体・自治体コード・設定ファイルと、
+  利用者設定の最終値・設定元（`[JSON]` / `[Notebook既定値]`）を表示する
+
+### Changed
+
+- `sheltermatch.ipynb` の利用者設定は `CONFIG_NAME` とNotebookの既定値（`ENABLE_HAZARD_CHECK = False`・
+  `SHELTER_SOURCE = "api"`）になった。設定ファイルに値があればそちらが優先され、糸満市の通常利用では
+  毎回 `ENABLE_HAZARD_CHECK = True` へ書き換えなくてよい。BODIKのresource_idは設定ファイルから取得する
+  （値は従来と同じ）。設定ファイルは外部モジュール（`src/`）と同じ版から取得する
+- 設定ファイルを取得・解釈できない（404・通信失敗・JSON構文不正・必須項目なし・型や値が不正）場合は、Notebookの
+  既定値で続行せず、原因を表示して止まる。設定ファイルにキーが無い場合はNotebookの既定値で続行する。
+  `"true"` や `1` を真偽値へ変換するなど、不正な値の補正はしない
+- `address_geocode.ipynb` の自治体名・自治体コード（`LG_CODE`）・都道府県名を、設定ファイルから読み込む
+  ようにした（住所変換のルール・ABR照合・出力5列は変更なし）
+- `experiments/gsi_shelter_compare/` の比較実験Notebook・`compare.py` が、自治体名・BODIKのresource_id・
+  比較設定を設定ファイルから受け取るようにした。`compare_logic.py` と `compare.py` から糸満市の固定値
+  （`TARGET_CITY`・`BODIK_RESOURCE_ID`）を除いた（`assign_gsi_scope()` の `city` は必須引数。比較の判定基準は変更なし）
+
+### 変更していないもの
+
+- 候補1〜3の直線距離ランキング、本人住所だけを対象にしたハザード判定、結果CSVの14列、`address_geocode.ipynb` の
+  出力5列、GSI/BODIK比較ロジックの判定基準、`review.html` の仕様
+- `SHELTERMATCH_CODE_REF`（`v1.1.0`）。ただし、設定ファイルと読込モジュールは取得する版（タグ）に含まれている必要が
+  あるため、`v1.1.0` タグを付け直す（または版を更新する）までは、`main` のNotebookは設定ファイルを取得できず止まる
+
 ## 2026-10-01（v1.1.0 運用版への切替）
 
 詳細: [docs/project-status.md](docs/project-status.md) の「6.4」

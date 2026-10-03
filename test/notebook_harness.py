@@ -5,8 +5,10 @@
 
     google.colab.files       アップロード＝指定した内容を順に返す / ダウンロード＝記録のみ
     %pip 行                  実行しない
-    requests.get             GitHub raw（src/）への取得は、作業ツリーの src/ の内容を返す
-                             （URLの版 SHELTERMATCH_CODE_REF によらず、作業ツリーを明示的に使う）
+    requests.get             GitHub raw（src/ と configs/）への取得は、作業ツリーの内容を返す
+                             （URLの版 SHELTERMATCH_CODE_REF によらず、作業ツリーを明示的に使う）。
+                             設定ファイル（configs/itoman-city.json）は、利用者設定セルの代入文の置き換えに当たる
+                             項目（ENABLE_HAZARD_CHECK・SHELTER_SOURCE）だけ、テストごとの値に差し替えて返す
                              BODIK Data API は、架空の避難所データを返す
                              それ以外のURL（OSM・地理院タイル・unpkg 等）は、接続せずに失敗させる
     review_builder           地図ライブラリの同梱と背景地図PNGの生成（外部通信が必要な処理）だけを、
@@ -30,6 +32,7 @@ import requests
 REPO = Path(__file__).resolve().parent.parent
 NOTEBOOK_PATH = REPO / "sheltermatch.ipynb"
 SRC_DIR = REPO / "src"
+CONFIG_DIR = REPO / "configs"
 
 GITHUB_RAW_PREFIX = "https://raw.githubusercontent.com/YanTKYS/sheltermatch/"
 BODIK_API_PREFIX = "https://data.bodik.jp/api/action/datastore_search"
@@ -109,10 +112,19 @@ class NotebookRun:
         self.output = io.StringIO()
         self.namespace = {"__name__": "__main__", "display": lambda *args, **kwargs: None}
         self.workdir = None
+        self.config_overrides = {}
 
     # ---- 差し替え ----
     def _fake_get(self, url, *args, **kwargs):
         self.urls.append(url)
+        if url.startswith(GITHUB_RAW_PREFIX) and "/configs/" in url:
+            # 版（タグ）の部分によらず、作業ツリーの configs/ の内容（テスト用に一部の値を差し替えたもの）を返す
+            target = CONFIG_DIR / url.split("/configs/", 1)[1]
+            if not target.is_file():
+                return FakeResponse(status_code=404)
+            config = json.loads(target.read_text(encoding="utf-8"))
+            config.setdefault("sheltermatch", {}).update(self.config_overrides)
+            return FakeResponse(json.dumps(config, ensure_ascii=False).encode("utf-8"))
         if url.startswith(GITHUB_RAW_PREFIX):
             # 版（タグ）の部分によらず、作業ツリーの src/ の内容を返す
             source_path = url.split("/src/", 1)[1]
@@ -144,7 +156,12 @@ class NotebookRun:
     # ---- 実行 ----
     def execute(self, upto_title=None, settings=None):
         """全セルを順に実行する。upto_title を指定すると、そのタイトルのセルの手前で止める。
-        settings は利用者設定セルの代入文の置き換え（例: {"SHELTER_SOURCE": '"csv"'}）。"""
+        settings は利用者設定の置き換え（例: {"SHELTER_SOURCE": '"csv"'}）。通常運用では設定ファイルの値が
+        Notebookの既定値より優先されるため、設定ファイルの値として差し替える。"""
+        names = {"ENABLE_HAZARD_CHECK": "enable_hazard_check", "SHELTER_SOURCE": "shelter_source"}
+        self.config_overrides = {"enable_hazard_check": self.hazard_uploads is not None}
+        for name, value in (settings or {}).items():
+            self.config_overrides[names[name]] = eval(value, {"True": True, "False": False})
         uploads = [{"residents.csv": self.residents_csv}]
         if self.hazard_uploads is not None:
             uploads.append(self.hazard_uploads)
@@ -169,7 +186,7 @@ class NotebookRun:
                 for source in code_cells():
                     if upto_title and source.startswith(upto_title):
                         break
-                    source = self._prepare(source, settings or {})
+                    source = self._prepare(source)
                     exec(compile(source, "<sheltermatch.ipynb>", "exec"), self.namespace)
                     if source.startswith("# ===== 外部モジュール準備"):
                         self._fake_review_builder_downloads(self.namespace["review_builder"])
@@ -179,19 +196,10 @@ class NotebookRun:
             os.chdir(previous_cwd)
         return self
 
-    def _prepare(self, source, settings):
+    @staticmethod
+    def _prepare(source):
         lines = ["" if line.lstrip().startswith(("%", "!")) else line for line in source.splitlines()]
-        source = "\n".join(lines)
-        if source.startswith("# ===== 利用者設定"):
-            enable = "True" if self.hazard_uploads is not None else "False"
-            source = source.replace("ENABLE_HAZARD_CHECK = False", f"ENABLE_HAZARD_CHECK = {enable}")
-            for name, value in settings.items():
-                assert f"{name} = " in source, name
-                source = "\n".join(
-                    f"{name} = {value}" if line.startswith(f"{name} = ") else line
-                    for line in source.splitlines()
-                )
-        return source
+        return "\n".join(lines)
 
     def close(self):
         self._tempdir.cleanup()

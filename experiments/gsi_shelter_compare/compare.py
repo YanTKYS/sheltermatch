@@ -2,6 +2,8 @@
 
 本番の sheltermatch.ipynb / src/ からは独立しており、本番コードからは import されない。比較・評価だけが目的で、
 データソースの切り替えや、どちらかのデータを正解とみなす判定は行わない。詳しくは README.md を参照。
+対象の自治体（自治体名・BODIKのresource_id）と比較の設定は、自治体ごとの設定ファイル configs/<設定名>.json から
+読み込む（このファイルや compare_logic.py には、特定の自治体の値を持たない）。
 
 比較・確認の主な入口は gsi_shelter_compare.ipynb（Google Colab 用Notebook）で、このファイルは、コマンドラインで
 同じ比較を再現したい場合の補助。Notebookもこのファイルの取得・CSV出力の関数と compare_logic.py を読み込んで
@@ -9,25 +11,32 @@
 
 使い方:
     python3 -m pip install requests geopy        # 未導入の場合のみ
-    python3 experiments/gsi_shelter_compare/compare.py [--output-dir DIR]
+    python3 experiments/gsi_shelter_compare/compare.py [--config-name 設定名] [--output-dir DIR]
 
 公開データ（BODIK Data API・地理院タイル）を読み取るだけで、APIキーは不要。
 """
 import argparse
 import csv
+import importlib.util
 import sys
 import time
 from pathlib import Path
 
 from compare_logic import (
-    COMPARED_SCOPES, EXACT_MAX_DISTANCE_M, GSI_LAYERS, NEAR_DISTANCE_M, TARGET_CITY,
+    COMPARED_SCOPES, EXACT_MAX_DISTANCE_M, GSI_LAYERS, NEAR_DISTANCE_M,
     Facility, assign_gsi_scope, compare_facilities, gsi_facility_from_feature, merge_gsi_layers,
     parse_coordinate, summarize, tiles_for_points,
 )
 
-# sheltermatch.ipynb（避難所取得・正規化セル）と同じ取得先。糸満市 指定緊急避難場所データセット。
+# sheltermatch.ipynb（避難所取得・正規化セル）と同じ BODIK Data API。取得するデータセット（resource_id）は
+# 自治体ごとに異なるため、設定ファイルの bodik.resource_id を使う。
 BODIK_BASE_URL = "https://data.bodik.jp"
-BODIK_RESOURCE_ID = "3132a0a4-f522-4b2d-bf18-f106d8b3a5ae"
+
+# 自治体ごとの設定ファイル（configs/<設定名>.json）。このリポジトリを取得して実行する場合はローカルのものを使い、
+# 無ければ GitHub の main から取得する。
+DEFAULT_CONFIG_NAME = "itoman-city"
+CONFIG_REPO_RAW_URL = "https://raw.githubusercontent.com/YanTKYS/sheltermatch/main"
+CONFIG_MODULE_PATH = Path(__file__).resolve().parents[2] / "src" / "config" / "municipality_config.py"
 
 GSI_TILE_URL = "https://cyberjapandata.gsi.go.jp/xyz/{layer}/{z}/{x}/{y}.geojson"
 GSI_ZOOM = 10
@@ -46,8 +55,9 @@ BODIK_COLUMNS = {
 # 取得
 # ---------------------------------------------------------------------------
 
-def fetch_bodik_records(session, base_url=BODIK_BASE_URL, resource_id=BODIK_RESOURCE_ID, page_size=1000):
-    """BODIKのCKAN Data API（datastore_search）から全件取得する（sheltermatch.ipynb と同じ取得方法）。"""
+def fetch_bodik_records(session, resource_id, base_url=BODIK_BASE_URL, page_size=1000):
+    """BODIKのCKAN Data API（datastore_search）から、resource_id のデータセットを全件取得する
+    （sheltermatch.ipynb と同じ取得方法）。"""
     endpoint = f"{base_url}/api/action/datastore_search"
     records, offset, total = [], 0, None
     while True:
@@ -239,16 +249,55 @@ def print_summary(summary, bodik, compared_gsi, rows, exact_max_m, near_m):
 # 実行
 # ---------------------------------------------------------------------------
 
+def load_municipality_config(config_name):
+    """自治体ごとの設定ファイルを読み込む。(読込モジュール, 設定, 取得元) を返す。
+    読込モジュール（src/config/municipality_config.py）は、このリポジトリのものを使う。"""
+    if not CONFIG_MODULE_PATH.is_file():
+        raise SystemExit(f"設定の読込モジュールが見つかりません: {CONFIG_MODULE_PATH}\n"
+                         "リポジトリ全体を取得して実行してください（Notebook版は単独でも実行できます）。")
+    spec = importlib.util.spec_from_file_location("municipality_config", CONFIG_MODULE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        config, origin = module.load_config(config_name, CONFIG_REPO_RAW_URL, start=Path(__file__).resolve().parent)
+    except module.ConfigError as error:
+        raise SystemExit(f"設定ファイルを読み込めないため、処理を止めます。\n{error}")
+    return module, config, origin
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--config-name", default=DEFAULT_CONFIG_NAME,
+                        help=f"自治体の設定名（configs/<設定名>.json。既定: {DEFAULT_CONFIG_NAME}）")
     parser.add_argument("--output-dir", default=str(Path(__file__).resolve().parent / "output"),
                         help="結果CSVの出力先（既定: このフォルダ内の output/。リポジトリにはコミットしない）")
-    parser.add_argument("--ring", type=int, default=1, help="BODIKの座標を含むタイルの周囲に追加で取得するタイル数（既定: 1）")
-    parser.add_argument("--exact-max-m", type=float, default=EXACT_MAX_DISTANCE_M,
-                        help=f"exact_match とする座標差の上限（m、既定: {EXACT_MAX_DISTANCE_M:g}）")
-    parser.add_argument("--near-m", type=float, default=NEAR_DISTANCE_M,
-                        help=f"名称が異なっても review_needed にする近接距離（m、既定: {NEAR_DISTANCE_M:g}）")
+    parser.add_argument("--ring", type=int, default=None,
+                        help="BODIKの座標を含むタイルの周囲に追加で取得するタイル数"
+                             "（既定: 設定ファイルの値。無ければ 1）")
+    parser.add_argument("--exact-max-m", type=float, default=None,
+                        help="exact_match とする座標差の上限（m。既定: 設定ファイルの値。"
+                             f"無ければ {EXACT_MAX_DISTANCE_M:g}）")
+    parser.add_argument("--near-m", type=float, default=None,
+                        help="名称が異なっても review_needed にする近接距離（m。既定: 設定ファイルの値。"
+                             f"無ければ {NEAR_DISTANCE_M:g}）")
     args = parser.parse_args(argv)
+
+    # 設定の優先順位: コマンドラインの指定 > 設定ファイルの値 > 既定値（設定ファイルに項目が無いとき）
+    municipality_config, config, config_origin = load_municipality_config(args.config_name)
+    settings = []
+    for name, option, key, default in (("TILE_RING", "ring", "tile_ring", 1),
+                                       ("EXACT_MAX_DISTANCE_M", "exact_max_m", "exact_max_distance_m",
+                                        EXACT_MAX_DISTANCE_M),
+                                       ("NEAR_DISTANCE_M", "near_m", "near_distance_m", NEAR_DISTANCE_M)):
+        value, source = municipality_config.resolve_setting(config, "gsi_shelter_compare", key, default)
+        if getattr(args, option) is not None:
+            value, source = getattr(args, option), "コマンドライン"
+        setattr(args, option, value)
+        settings.append((name, f"{value:g}" if isinstance(value, float) else value, source))
+    print("\n".join(municipality_config.describe_municipality(config, args.config_name, config_origin)))
+    print("\n比較設定:")
+    print("\n".join(municipality_config.describe_settings(settings)))
+    print()
 
     import requests  # 通信を行うのはこのファイルだけ（compare_logic.py は通信しない）
 
@@ -256,7 +305,7 @@ def main(argv=None):
     session.headers["User-Agent"] = USER_AGENT
 
     print("BODIK Data API から指定緊急避難場所を取得します…")
-    bodik = bodik_facilities(fetch_bodik_records(session))
+    bodik = bodik_facilities(fetch_bodik_records(session, config["bodik"]["resource_id"]))
     bodik_with_coords = [b for b in bodik if b.latitude is not None]
     print(f"BODIK施設数: {len(bodik)}件（座標が不正・欠損: {len(bodik) - len(bodik_with_coords)}件）")
 
@@ -276,7 +325,7 @@ def main(argv=None):
         print(f"  Point以外のため読み飛ばしたFeature: {skipped}件")
 
     unique_gsi, split_count = merge_gsi_layers(features)
-    assign_gsi_scope(unique_gsi, bodik, TARGET_CITY, near_m=args.near_m)
+    assign_gsi_scope(unique_gsi, bodik, config["municipality"]["name"], near_m=args.near_m)
     compared_gsi = [g for g in unique_gsi if g.scope in COMPARED_SCOPES]
     print(f"GSIユニーク施設数（レイヤー間の重複を統合後・絞り込み前）: {len(unique_gsi)}件")
     for scope in (*COMPARED_SCOPES, "excluded_address_missing_far", "excluded_other_address"):

@@ -43,7 +43,12 @@
 
 1. [`gsi_shelter_compare.ipynb`](gsi_shelter_compare.ipynb) を Google Colab で開きます（上のバッジ、または
    GitHub 上の Notebook から「Open in Colab」）。
-2. 必要なら「利用者設定」のセルの値（`TILE_RING`・`EXACT_MAX_DISTANCE_M`・`NEAR_DISTANCE_M`）を確認します。通常は変更不要です。
+2. 「利用者設定」のセルを確認します。通常は変更不要です（`CONFIG_NAME = "itoman-city"`。比較の設定
+   `TILE_RING`・`EXACT_MAX_DISTANCE_M`・`NEAR_DISTANCE_M` は Notebook の既定値で、設定ファイルに値があればそちらが
+   優先されます）。対象の自治体・BODIK の resource_id・比較設定は、設定ファイル
+   [`configs/itoman-city.json`](../../configs/itoman-city.json) から読み込み、実行時に最終値と設定元
+   （`[JSON]` / `[Notebook既定値]`）を表示します。設定ファイルを取得・解釈できないときは、既定値で続行せず止まります
+   （[`configs/README.md`](../../configs/README.md)）。別の自治体で比較するときは、`CONFIG_NAME` を変更します。
 3. 上のセルから順に実行します。比較ロジック（`compare_logic.py`・`compare.py`）は、Notebook の初期セルが GitHub の
    `main`（`COMPARE_LOGIC_REF`）から自動で取得します。同じフォルダ（またはリポジトリを開いている場合は
    `experiments/gsi_shelter_compare/`）に両ファイルがあれば、そちらを使います。
@@ -62,17 +67,21 @@ python3 experiments/gsi_shelter_compare/compare.py
 
 公開データの読み取りだけで、APIキーは不要です。主なオプション（`--help` 参照）:
 
+* `--config-name NAME` 自治体の設定名（`configs/NAME.json`。既定: `itoman-city`）
 * `--output-dir DIR` 結果CSVの出力先（既定: `output/`）
-* `--ring N` BODIK の座標を含むタイルの周囲に追加で取得するタイル数（既定 1）
-* `--exact-max-m M` `exact_match` とする座標差の上限（既定 30m）
-* `--near-m M` 名称が異なっても `review_needed` にする近接距離（既定 100m）
+* `--ring N` BODIK の座標を含むタイルの周囲に追加で取得するタイル数（既定: 設定ファイルの値）
+* `--exact-max-m M` `exact_match` とする座標差の上限（既定: 設定ファイルの値）
+* `--near-m M` 名称が異なっても `review_needed` にする近接距離（既定: 設定ファイルの値）
+
+優先順位は「コマンドラインの指定 > 設定ファイルの値 > 既定値（設定ファイルに項目が無いとき）」です。
 
 ## データの取得方法
 
 ### BODIK
 
 `sheltermatch.ipynb`（避難所取得セル）と同じく、`https://data.bodik.jp` の CKAN Data API（`datastore_search`）から、
-resource_id `3132a0a4-f522-4b2d-bf18-f106d8b3a5ae`（糸満市 指定緊急避難場所データセット）を全件取得します。
+設定ファイルの `bodik.resource_id`（糸満市は `3132a0a4-…`。糸満市 指定緊急避難場所データセット）を全件取得します。
+resource_id と自治体名は `compare.py`・`compare_logic.py` に固定せず、設定ファイルから引数で受け取ります。
 比較には 名称・住所・緯度・経度（日本語列名 `名称`・`住所`・`緯度`・`経度`）を使います。方書・災害種別などの
 列は使いません。座標が不正な施設も、座標なしのまま比較に残します。
 
@@ -89,13 +98,13 @@ resource_id `3132a0a4-f522-4b2d-bf18-f106d8b3a5ae`（糸満市 指定緊急避�
 
 ### GSIの対象範囲の振り分け
 
-住所に「糸満市」が無いことだけを理由に除外はしません。重複整理のあと、施設ごとに `scope` を付けます。
+住所に自治体名（設定ファイルの `municipality.name`。糸満市なら「糸満市」）が無いことだけを理由に除外はしません。重複整理のあと、施設ごとに `scope` を付けます。
 
 | scope | 条件 | 比較 |
 | --- | --- | --- |
-| `in_city` | 住所に「糸満市」を含む | 対象 |
+| `in_city` | 住所に自治体名を含む | 対象 |
 | `address_missing_near` | 住所が空欄で、BODIK の座標範囲（余白約2km）の中にある | 対象（住所は比較できない） |
-| `other_address_near_bodik` | 住所に「糸満市」は無いが、BODIK の施設と名称が一致、またはBODIKの施設から100m以内 | 対象（住所が異なるので `review_needed` になる） |
+| `other_address_near_bodik` | 住所に自治体名は無いが、BODIK の施設と名称が一致、またはBODIKの施設から100m以内 | 対象（住所が異なるので `review_needed` になる） |
 | `excluded_address_missing_far` | 住所が空欄で、範囲の外 | 対象外 |
 | `excluded_other_address` | 上のいずれでもない（他市町村の施設など） | 対象外 |
 

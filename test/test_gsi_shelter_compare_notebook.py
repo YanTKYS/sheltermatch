@@ -3,7 +3,9 @@
 Notebookは実行せず、ソースを読んで次を確認する。外部通信は行わない。
 
 * 比較ロジックは compare_logic.py を読み込んで使い、Notebookへコピーしていない
-* BODIKの resource_id が本番の sheltermatch.ipynb と同じ、GSIのレイヤーが skhb01〜skhb08
+* BODIKの resource_id と自治体名は設定ファイル（configs/）から受け取り、Notebookに固定していない
+  （糸満市の設定が従来の値と同じであることは test_municipality_config.py で確認する）
+* GSIのレイヤーが skhb01〜skhb08
 * 本番のデータソース切替（SHELTER_SOURCE）や、要支援者CSV・ハザード・本番結果CSVの扱いが無い
 * 取得元URLが1か所だけで、実行結果（出力）がNotebookに残っていない
 
@@ -87,15 +89,19 @@ class NotebookUsesSharedLogicTest(unittest.TestCase):
 
 
 class NotebookDataSourceTest(unittest.TestCase):
-    def test_BODIKのresource_idは本番Notebookと同じ(self):
-        production = code_source(load_notebook(REPO_ROOT / "sheltermatch.ipynb"))
-        match = re.search(r'BODIK_RESOURCE_ID = "([0-9a-f-]{36})"', production)
-        self.assertIsNotNone(match)
-        self.assertEqual(compare.BODIK_RESOURCE_ID, match.group(1))
+    def test_BODIKのresource_idと自治体名は設定ファイルから受け取る(self):
         self.assertEqual(compare.BODIK_BASE_URL, "https://data.bodik.jp")
-        # Notebookが独自の別のresource_idを持っていないこと（compare.BODIK_RESOURCE_ID を使う）
+        # Notebook・比較コードに、自治体固有のresource_idが固定されていない
         self.assertEqual(set(UUID_RE.findall(SOURCE)), set())
-        self.assertIn("compare.BODIK_RESOURCE_ID", SOURCE)
+        self.assertFalse(hasattr(compare, "BODIK_RESOURCE_ID"))
+        self.assertFalse(hasattr(cl, "TARGET_CITY"))
+        self.assertIn('BODIK_RESOURCE_ID = config["bodik"]["resource_id"]', SOURCE)
+        self.assertIn('MUNICIPALITY_NAME = config["municipality"]["name"]', SOURCE)
+        self.assertIn("compare.fetch_bodik_records(session, BODIK_RESOURCE_ID)", SOURCE)
+        self.assertIn("cl.assign_gsi_scope(unique_gsi, bodik, MUNICIPALITY_NAME,", SOURCE)
+        # 設定ファイルの読込モジュールを使い、設定名は CONFIG_NAME の1か所で決まる
+        self.assertIn("municipality_config.load_config(CONFIG_NAME, RAW_REPO_URL)", SOURCE)
+        self.assertEqual(len(re.findall(r"(?m)^CONFIG_NAME = ", SOURCE)), 1)
 
     def test_GSIのレイヤーはskhb01からskhb08(self):
         self.assertEqual(list(cl.GSI_LAYERS), [f"skhb0{i}" for i in range(1, 9)])

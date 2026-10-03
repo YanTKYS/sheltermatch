@@ -90,16 +90,19 @@ class NotebookEndToEndWithHazardTest(unittest.TestCase):
         for url in self.run_.urls:
             self.assertTrue(
                 url.startswith("https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.1.0/src/")
+                or url == "https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.1.0/configs/itoman-city.json"
                 or url.startswith("https://data.bodik.jp/api/action/datastore_search"),
                 url,
             )
         self.assertFalse([u for u in self.run_.urls if "overpass" in u or "nominatim" in u or "osm" in u.lower()])
         self.assertNotIn("osmnx", sys.modules)
-        # 取得する外部モジュール（assignmentを含む4つ）
+        # 取得する外部モジュール（assignmentと設定の読込を含む5つ）と、自治体の設定ファイル（モジュールと同じ版）
         fetched = sorted(u.split("/src/", 1)[1] for u in self.run_.urls if "/src/" in u)
         self.assertEqual(fetched, sorted([
-            "hazard/hazard_loader.py", "assignment/shelter_assignment.py",
+            "hazard/hazard_loader.py", "assignment/shelter_assignment.py", "config/municipality_config.py",
             "review/review_builder.py", "review/review_template.html"]))
+        configs = [u for u in self.run_.urls if "/configs/" in u]
+        self.assertEqual(configs, ["https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.1.0/configs/itoman-city.json"])
 
     def test_v1_1_0のsrcを取得する(self):
         self.assertEqual(self.run_.namespace["SHELTERMATCH_CODE_REF"], "v1.1.0")
@@ -154,10 +157,14 @@ class NotebookSourceTest(unittest.TestCase):
         self.assertIsNone(re.search(r"^TOP_N\s*=", source, re.M))
         self.assertNotIn("TOP_N", source)
 
-    def test_利用者設定は2項目(self):
+    def test_利用者設定は設定名とNotebook既定値の2項目だけ(self):
+        # 自治体の切替は CONFIG_NAME だけ。ほかの2項目はNotebookの既定値で、設定ファイルに値があればそちらが優先される
         settings = [c for c in code_cells() if c.startswith("# ===== 利用者設定")][0]
         names = re.findall(r"^([A-Z_]+) = ", settings, re.M)
-        self.assertEqual(names, ["ENABLE_HAZARD_CHECK", "SHELTER_SOURCE"])
+        self.assertEqual(names, ["CONFIG_NAME", "ENABLE_HAZARD_CHECK", "SHELTER_SOURCE"])
+        self.assertIn('CONFIG_NAME = "itoman-city"', settings)
+        self.assertIn("ENABLE_HAZARD_CHECK = False", settings)
+        self.assertIn('SHELTER_SOURCE = "api"', settings)
 
 
 if __name__ == "__main__":

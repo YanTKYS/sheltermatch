@@ -118,12 +118,19 @@ BODIK Data API から糸満市の自治体標準オープンデータセット�
 ## 実行方法
 
 1. `sheltermatch.ipynb` を Google Colab で開く
-2. 冒頭の「利用者設定」セルを確認する
+2. 冒頭の「利用者設定」セルを確認する（糸満市の通常利用では、**変更不要**です）
 
    ```python
-   ENABLE_HAZARD_CHECK = False   # 本人住所のハザードも確認する場合は True
-   SHELTER_SOURCE = "api"        # "api"=BODIKから取得 / "csv"=CSVをアップロード
+   CONFIG_NAME = "itoman-city"   # 自治体の設定名（configs/itoman-city.json）。別の自治体で使うときだけ変更
+   ENABLE_HAZARD_CHECK = False   # Notebookの既定値。設定ファイルに値があればそちらが優先される
+   SHELTER_SOURCE = "api"        # Notebookの既定値。"api"=BODIKから取得 / "csv"=CSVをアップロード
    ```
+
+   自治体名・BODIKのデータセット・本人住所のハザード確認の有無などは、設定ファイル
+   [configs/itoman-city.json](configs/itoman-city.json) にまとめています（糸満市の設定では
+   `ENABLE_HAZARD_CHECK` は `true` になり、実行時に最終的な値と設定元を表示します）。設定ファイルを
+   取得・解釈できない場合は、既定値で続行せず原因を表示して止まります。詳しくは
+   [configs/README.md](configs/README.md) を参照してください。
 
 3. 「ランタイム → すべてのセルを実行」
 4. 画面の指示に従って、要支援者CSV（と、必要ならハザードデータ）をアップロードする
@@ -154,13 +161,16 @@ assigned_shelters.csv / sheltermatch_review.zip
 | `src/assignment/shelter_assignment.py` | 避難所候補（直線距離）・本人住所のハザード判定・ハザード大分類別の集計・結果CSVの組み立て |
 | `src/hazard/hazard_loader.py` | ハザードデータの読込・正規化・統合 |
 | `src/review/review_builder.py` | レビュー成果物（PNG・HTML・ZIP）の生成 |
+| `src/config/municipality_config.py` | 自治体ごとの設定ファイル（`configs/`）の読込・検証 |
+| `configs/` | 自治体ごとの設定ファイル（`itoman-city.json`）と説明 |
 | `src/review/review_template.html` | `review.html` の画面（HTML / CSS / JavaScript） |
 | `templates/residents.csv` | 要支援者一覧CSVのテンプレート |
 | `test/` | 回帰テストと、個人情報を含まない確認用サンプル |
 | `experiments/` | 方式検証の記録と、性能確認用の架空データ |
 | `docs/` | データ取得手順・現状整理などの詳細ドキュメント |
 
-`sheltermatch.ipynb` は、Google Colab での実行時に `src/` 配下のファイルを GitHub から取得して読み込みます。
+`sheltermatch.ipynb` は、Google Colab での実行時に `src/` 配下のファイルと、自治体の設定ファイル
+（`configs/<CONFIG_NAME>.json`）を GitHub から取得して読み込みます（設定ファイルも同じ版から取得します）。
 取得するのは版（タグ。`SHELTERMATCH_CODE_REF`）で固定しており、現在は `v1.1.0` です。実行時に
 「外部モジュール: v1.1.0」と表示します。`main` へ変更が入っても、取得する版を更新するまで実行されるコードは
 変わりません（版の更新方法は [docs/project-status.md](docs/project-status.md) の「6.4」）。
