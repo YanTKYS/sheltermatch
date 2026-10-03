@@ -3,10 +3,10 @@
 通常運用の Notebook は、実データで動作確認した版（タグ）の src/ を取得する。main へ変更が取り込まれても、
 取得する版（SHELTERMATCH_CODE_REF）を変えない限り、実行されるコードは変わらない。ここでは次を確認する。
 
-* 取得する版が v1.1.0 であること（版を更新するときは、このテストも意図した変更として一緒に更新する）
+* 取得する版が v1.2.0 であること（版を更新するときは、このテストも意図した変更として一緒に更新する）
 * main の src/ を取得先として使っていないこと
-* hazard_loader・shelter_assignment・review_builder・review_template.html が、すべて同じ取得元から取得されること
-  （道路経路のモジュール road_routes は取得しない）
+* hazard_loader・shelter_assignment・review_builder・review_template.html・municipality_config（自治体設定の
+  読込）が、すべて同じ取得元から取得されること（道路経路のモジュール road_routes は取得しない）
 * 既存の API バージョンの確認（互換性のないモジュールでは止まる）がそのまま働くこと
 
 外部通信は行わない。「外部モジュール準備」セルをそのまま実行し、requests.get だけを差し替えて、取得した
@@ -26,13 +26,14 @@ from pathlib import Path
 NOTEBOOK_PATH = Path(__file__).resolve().parent.parent / "sheltermatch.ipynb"
 MODULE_CELL_TITLE = "# ===== 外部モジュール準備 ====="
 
-EXPECTED_REF = "v1.1.0"
+EXPECTED_REF = "v1.2.0"
 EXPECTED_REPO_URL = f"https://raw.githubusercontent.com/YanTKYS/sheltermatch/{EXPECTED_REF}"
 EXPECTED_BASE_URL = f"{EXPECTED_REPO_URL}/src"
 
 # 取得するファイルと、src/ が持つ API バージョン（Notebook 側の想定値と一致している必要がある）。
 # v1.1.0 で、避難所候補の算出・ハザード集計を行う assignment を追加し、hazard_loader・review_builder の
-# API バージョンを上げ、道路経路（road_routes）の取得をやめた。
+# API バージョンを上げ、道路経路（road_routes）の取得をやめた。v1.2.0 で、自治体ごとの設定ファイルを読み込む
+# municipality_config を追加した。
 EXPECTED_MODULES = {
     "hazard/hazard_loader.py": ("hazard_loader", "HAZARD_LOADER_API_VERSION", 2),
     "assignment/shelter_assignment.py": ("shelter_assignment", "ASSIGNMENT_API_VERSION", 1),
