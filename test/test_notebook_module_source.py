@@ -27,7 +27,8 @@ NOTEBOOK_PATH = Path(__file__).resolve().parent.parent / "sheltermatch.ipynb"
 MODULE_CELL_TITLE = "# ===== 外部モジュール準備 ====="
 
 EXPECTED_REF = "v1.1.0"
-EXPECTED_BASE_URL = f"https://raw.githubusercontent.com/YanTKYS/sheltermatch/{EXPECTED_REF}/src"
+EXPECTED_REPO_URL = f"https://raw.githubusercontent.com/YanTKYS/sheltermatch/{EXPECTED_REF}"
+EXPECTED_BASE_URL = f"{EXPECTED_REPO_URL}/src"
 
 # 取得するファイルと、src/ が持つ API バージョン（Notebook 側の想定値と一致している必要がある）。
 # v1.1.0 で、避難所候補の算出・ハザード集計を行う assignment を追加し、hazard_loader・review_builder の
@@ -36,6 +37,8 @@ EXPECTED_MODULES = {
     "hazard/hazard_loader.py": ("hazard_loader", "HAZARD_LOADER_API_VERSION", 2),
     "assignment/shelter_assignment.py": ("shelter_assignment", "ASSIGNMENT_API_VERSION", 1),
     "review/review_builder.py": ("review_builder", "REVIEW_BUILDER_API_VERSION", 3),
+    # 自治体ごとの設定ファイル（configs/<CONFIG_NAME>.json）の読込・検証。設定ファイルも同じ版から取得する
+    "config/municipality_config.py": ("municipality_config", "CONFIG_LOADER_API_VERSION", 1),
 }
 EXPECTED_FILES = {"review/review_template.html"}
 
@@ -166,19 +169,26 @@ class ModuleSourceStaticTest(unittest.TestCase):
         self.assertEqual(ast.literal_eval(nodes[0].value), EXPECTED_REF)
 
     def test_取得元のURLは版から組み立てる(self):
-        nodes = assignments("GITHUB_RAW_BASE_URL")
-        self.assertEqual(len(nodes), 1, "GITHUB_RAW_BASE_URL はNotebook全体で1か所だけで定義する")
-        expression = compile(ast.Expression(nodes[0].value), "<GITHUB_RAW_BASE_URL>", "eval")
-        self.assertEqual(eval(expression, {"SHELTERMATCH_CODE_REF": EXPECTED_REF}), EXPECTED_BASE_URL)
+        # リポジトリのURL（設定ファイルの取得にも使う）→ src/ のURL の順に、版から組み立てる
+        def urls_for(ref):
+            namespace = {"SHELTERMATCH_CODE_REF": ref}
+            for name in ("GITHUB_RAW_REPO_URL", "GITHUB_RAW_BASE_URL"):
+                nodes = assignments(name)
+                self.assertEqual(len(nodes), 1, f"{name} はNotebook全体で1か所だけで定義する")
+                namespace[name] = eval(compile(ast.Expression(nodes[0].value), f"<{name}>", "eval"), namespace)
+            return namespace["GITHUB_RAW_REPO_URL"], namespace["GITHUB_RAW_BASE_URL"]
+
+        self.assertEqual(urls_for(EXPECTED_REF), (EXPECTED_REPO_URL, EXPECTED_BASE_URL))
         # 版を変えるとURLも変わる（版がURLへ直接書かれていない）
-        self.assertEqual(eval(expression, {"SHELTERMATCH_CODE_REF": "other-ref"}),
-                         "https://raw.githubusercontent.com/YanTKYS/sheltermatch/other-ref/src")
+        self.assertEqual(urls_for("other-ref"),
+                         ("https://raw.githubusercontent.com/YanTKYS/sheltermatch/other-ref",
+                          "https://raw.githubusercontent.com/YanTKYS/sheltermatch/other-ref/src"))
 
     def test_mainのsrcを取得先に使わない(self):
         for source in code_cells():
             self.assertNotIn("/main/src", source)
             self.assertNotIn("sheltermatch/main", source)
-        # GitHub raw のURLは GITHUB_RAW_BASE_URL の定義の1か所だけ（モジュールごとに別の取得元を持たない）
+        # GitHub raw のURLは GITHUB_RAW_REPO_URL の定義の1か所だけ（モジュールや設定ファイルごとに別の取得元を持たない）
         occurrences = sum(source.count("raw.githubusercontent.com") for source in code_cells())
         self.assertEqual(occurrences, 1)
 

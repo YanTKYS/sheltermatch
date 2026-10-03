@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 
 from geopy.distance import geodesic
 
-TARGET_CITY = "糸満市"
+# 対象の自治体名（住所に含まれる市名の判定に使う）は、自治体ごとの設定ファイル（configs/<設定名>.json の
+# municipality.name）から呼び出し側が渡す。このモジュールは特定の自治体に依存しない。
 
 # 「明らかに同一」と扱う座標差の上限（m）。名称・住所が一致していても、これを超える場合は review_needed にする。
 EXACT_MAX_DISTANCE_M = 30.0
@@ -220,7 +221,7 @@ def _merge_cluster(cluster):
     return merged
 
 
-def assign_gsi_scope(unique_gsi, bodik, city=TARGET_CITY, margin_deg=ADDRESS_MISSING_MARGIN_DEG,
+def assign_gsi_scope(unique_gsi, bodik, city, margin_deg=ADDRESS_MISSING_MARGIN_DEG,
                      near_m=NEAR_DISTANCE_M):
     """GSIのユニーク施設ごとに、比較の対象にするか（scope）を決める。住所に市名が無いだけでは除外しない。
 

@@ -254,7 +254,11 @@ JageocoderとABR Geocoder（`@digital-go-jp/abr-geocoder`、および `abrdb`/`a
   入力の読み直しに失敗した場合や設定・入力のセルを再実行した場合の前回結果の無効化、
   前回の結果CSVを再投入した場合の結果列の置き換え
 
-利用者設定は `ENABLE_HAZARD_CHECK` と `SHELTER_SOURCE` の2つだけである（旧 `TOP_N`・`ENABLE_ROAD_ROUTES` は廃止）。
+Notebookの利用者設定は、自治体の設定名 `CONFIG_NAME` と、Notebookの既定値である `ENABLE_HAZARD_CHECK`・
+`SHELTER_SOURCE` だけである（旧 `TOP_N`・`ENABLE_ROAD_ROUTES` は廃止）。自治体名・BODIKのresource_id・通常使う設定は
+`configs/<CONFIG_NAME>.json`（糸満市は `itoman-city.json`）にまとめ、設定ファイルに値があればそちらを優先し、
+項目が無ければNotebookの既定値を使う。設定ファイルを取得・解釈できない場合は、既定値で続行せず止まる
+（[configs/README.md](../configs/README.md)）。
 Notebookは osmnx を導入せず、OpenStreetMap の道路データも取得しない。
 
 結果CSVの出力セルは、レビューHTMLの出力より前にある。レビューHTMLの作成に失敗しても、正式成果物である結果CSVは
@@ -370,6 +374,12 @@ Notebookが「利用者が上から順に実行する手順」として読める
 5. Google Colab で `v1.1.0` を実行する（未実施）
 6. `assigned_shelters.csv` と `sheltermatch_review.zip` を確認する（未実施）
 7. 確認完了後に担当部署へ配布する（未実施）
+
+**自治体ごとの設定ファイル（`configs/`）と読込モジュール（`src/config/municipality_config.py`）の追加（2026-10-03）**:
+`sheltermatch.ipynb` と `address_geocode.ipynb` は、設定ファイルと読込モジュールを、`SHELTERMATCH_CODE_REF` の版
+（タグ）から取得する。そのため、これらを含むコミットへ `v1.1.0` タグを付け直す（または版を更新する）までは、
+`main` のNotebookは設定ファイルを取得できず、原因を表示して止まる（誤った設定で進めないための設計）。
+`v1.1.0` は未配布のため、Google Colab での実機確認の前にタグを付け直す。
 
 タグの付け直しは、PR #50 のマージ後に行う作業で、PR #50 の作業中にはタグを変更しない。配布済み・運用で使ってきた
 `v1.0.0` タグは、付け直したり削除したりしない（`v1.1.0` は未配布のため、上記の確定前の付け直しだけを例外とする）。

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+
+  "municipality": {
+    "id": "itoman-city",
+    "name": "糸満市",
+    "code": "47210",
+    "prefecture": "沖縄県"
+  },
+
+  "bodik": {
+    "resource_id": "3132a0a4-f522-4b2d-bf18-f106d8b3a5ae"
+  },
+
+  "sheltermatch": {
+    "enable_hazard_check": true,
+    "shelter_source": "api"
+  },
+
+  "gsi_shelter_compare": {
+    "tile_ring": 1,
+    "exact_max_distance_m": 30,
+    "near_distance_m": 100
+  }
+}
