@@ -119,6 +119,8 @@ BODIK Data API の自治体標準オープンデータセット（指定緊急�
 ## 実行方法
 
 1. `sheltermatch.ipynb` を Google Colab で開く
+
+   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YanTKYS/sheltermatch/blob/main/sheltermatch.ipynb)
 2. 冒頭の「利用者設定」セルを確認する（既定の `itoman-city`（糸満市）の通常利用では、**変更不要**です）
 
    ```python
@@ -137,6 +139,8 @@ BODIK Data API の自治体標準オープンデータセット（指定緊急�
 ABR公式データのZIPをアップロードし、住所CSVを変換して、同じ5列のCSVを出力します。取得元・手順・結果
 （`geocode_status`）の読み方は [docs/address-data.md](docs/address-data.md) を参照してください。
 ABRデータはこのリポジトリに保管しません。
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YanTKYS/sheltermatch/blob/main/address_geocode.ipynb)
 
 ```text
 templates/residents.csv

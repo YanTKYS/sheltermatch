@@ -360,3 +360,12 @@ v1.1.0 の目的は「要支援者本人の住所についてハザードの影�
   `gsi_shelter_compare/`）へ整理した。各フォルダに README を、`experiments/` 直下に入口の README を追加した
 - ファイルの移動に伴い、Notebook・docs・生成スクリプトの出力先の参照パスを更新した
 - 本番の業務仕様・コード（`sheltermatch.ipynb`・`address_geocode.ipynb`・`src/`）、実験の内容は変更なし
+
+## 2026-10-04（NotebookのColab導線改善）
+
+### Changed
+
+- リポジトリ内のNotebookに、タイトル直下へ `Open In Colab` バッジを統一して追加した（main 上のNotebookを開く入口。
+  Notebook内部の取得する版（`SHELTERMATCH_CODE_REF` 等）や処理ロジックは変更なし）
+- 通常利用Notebook（`sheltermatch.ipynb`・`address_geocode.ipynb`）を README から直接Colabで開ける導線を追加した
+- Notebook追加時のバッジ付け忘れを検知する静的テストを追加した

@@ -94,6 +94,9 @@ GitHub からの取得だけを作業ツリーの `src/` へ差し替える（`n
 * `test_review_html.py`: レビュー用HTMLの回帰テスト。
 * `test_notebook_end_to_end.py`: `sheltermatch.ipynb` の通し実行の回帰テスト。
 * `test_notebook_module_source.py`: `sheltermatch.ipynb` の外部モジュールの取得先の回帰テスト。
+* `test_colab_badges.py`: リポジトリ内のすべての `.ipynb`（自動で列挙）の最初のMarkdownセルに、タイトル直下の
+  「Open In Colab」バッジ（main 上の Notebook 自身を開くURL）があることの静的テスト。Notebook の追加時の付け忘れを検知する。
+  Notebook は実行せず、外部通信もしない。
 * `test_municipality_config.py`: 自治体ごとの設定ファイル（`configs/`）と読込モジュールの回帰テスト（設定の検証、JSONと
   Notebook既定値の優先順位、取得失敗・不正値での停止、通常運用のNotebookが外部モジュールと設定ファイルを同じ版から
   取得すること）。外部通信は行わない。
