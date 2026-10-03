@@ -162,7 +162,7 @@ assigned_shelters.csv / sheltermatch_review.zip
 | `src/review/review_template.html` | `review.html` の画面（HTML / CSS / JavaScript） |
 | `templates/residents.csv` | 要支援者一覧CSVのテンプレート |
 | `test/` | 回帰テストと、個人情報を含まない確認用サンプル |
-| `experiments/` | 方式検証の記録と、性能確認用の架空データ |
+| [`experiments/`](experiments/README.md) | 本番処理ではない検証・調査・PoC（住所変換方式の検証、ハザードのジオメトリ調査、性能確認用の架空データ、BODIK/GSI比較） |
 | `docs/` | データ取得手順・現状整理などの詳細ドキュメント |
 
 `sheltermatch.ipynb` は、Google Colab での実行時に `src/` 配下のファイルと、自治体の設定ファイル

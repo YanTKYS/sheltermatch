@@ -6,7 +6,7 @@ address_geocode.ipynb は通さない（住所→座標変換の正確性は目�
 実在の住所・住民データは一切使用しない。
 
 使い方:
-    python3 experiments/generate_performance_samples.py
+    python3 experiments/performance/generate_performance_samples.py
 
 experiments/performance/residents_100.csv
 experiments/performance/residents_500.csv
@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-OUTPUT_DIR = Path(__file__).resolve().parent / "performance"
+OUTPUT_DIR = Path(__file__).resolve().parent
 
 # 固定シード。実行するたびに同じデータが生成されることを保証する。
 SEED = 20240921

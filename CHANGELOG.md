@@ -351,3 +351,12 @@ v1.1.0 の目的は「要支援者本人の住所についてハザードの影�
 - README、`docs/project-status.md`、`docs/pre-production-check-2026-09-28.md`、`address_geocode.ipynb` の説明等を、
   現在の v1.2.0 運用状態（自治体設定JSON導入済み、`v1.2.0` タグは本PRのマージ後に作成、Google Colab 実機確認後に配布）へ
   更新した。過去の記録（v1.0.0 / v1.1.0 時点の確認記録・履歴）は保持している
+
+## 2026-10-04（experiments の整理）
+
+### Changed
+
+- `experiments/` を、テーマ別フォルダ（`address_geocoding/`・`hazard_geometry_audit/`・`performance/`・
+  `gsi_shelter_compare/`）へ整理した。各フォルダに README を、`experiments/` 直下に入口の README を追加した
+- ファイルの移動に伴い、Notebook・docs・生成スクリプトの出力先の参照パスを更新した
+- 本番の業務仕様・コード（`sheltermatch.ipynb`・`address_geocode.ipynb`・`src/`）、実験の内容は変更なし

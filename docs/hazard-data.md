@@ -46,7 +46,7 @@ Notebook側ですべて自動的に読み込んで1つのハザードデータ�
 
 公式配布データには、自己交差等で `is_valid=False` になっているポリゴンが実際に含まれています。
 糸満市で使用する公式11ZIP（津波LEVEL1〜7 / A33 / 高潮 / A31a 2種類、全182,424件）を
-`experiments/hazard_geometry_audit.ipynb` で調べたところ、**1,354件**が該当し、その**全件**が
+`experiments/hazard_geometry_audit/hazard_geometry_audit.ipynb` で調べたところ、**1,354件**が該当し、その**全件**が
 `make_valid()` でPolygon / MultiPolygonへ復元できました（復元された面積は合計約175,085,405㎡）。
 復元前後で（v1.0.0 時点で判定していた）候補避難所地点の判定に**3件**の差が出たため、本体で直してから
 使うようにしています。

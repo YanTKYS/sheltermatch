@@ -61,7 +61,7 @@ Google Colab実行環境そのもの、および環境が異なる場合の処�
 
 ## 3. 入力件数
 
-`experiments/generate_performance_samples.py`（固定シード、再現可能）で生成した以下を使用。
+`experiments/performance/generate_performance_samples.py`（固定シード、再現可能）で生成した以下を使用。
 
 - `experiments/performance/residents_100.csv`
 - `experiments/performance/residents_500.csv`

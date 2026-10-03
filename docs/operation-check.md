@@ -21,7 +21,7 @@
 （アップロード・ダウンロード）、BODIK Data API（`requests.get`）をモック化した上で、Pythonの新規
 プロセスから初期状態で順番に実行する形で確認した（インポート済みライブラリ・既存変数・過去の
 アップロード履歴が一切残っていない、新規ランタイムに相当する状態）。ABRマスタ・避難所・ハザードは
-実データではなく、`experiments/address_conversion_test_input.csv` 等と同じ方針の架空データ・
+実データではなく、`experiments/address_geocoding/address_conversion_test_input.csv` 等と同じ方針の架空データ・
 `docs/performance-test.md` で使った合代替データに準じたものを使用した。
 
 **実際のGoogle Colabでの最終確認は未実施であり、完了扱いにはしていない。**
