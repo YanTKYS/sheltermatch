@@ -233,7 +233,7 @@ JageocoderとABR Geocoder（`@digital-go-jp/abr-geocoder`、および `abrdb`/`a
 キャッシュ生成のために配布データを自動ダウンロードする構成で、Google Colab・GitHub-hosted runner等の
 クラウド環境から配布データを取得する段階で403等のエラーが発生した（ABR Geocoder公式リポジトリでも既知の
 外部要因として報告されている。Jageocoderには加えてPython・converter APIの互換性問題もあった）。
-そのため、利用者がABR公式CSVを手動取得して直接照合する方式（`experiments/abr_csv_geocode_poc.ipynb` で検証）
+そのため、利用者がABR公式CSVを手動取得して直接照合する方式（`experiments/address_geocoding/abr_csv_geocode_poc.ipynb` で検証）
 を採用した。検証の記録は `experiments/` に残している。
 
 他自治体への展開は、必要になった場合に追加データ・追加検証を検討する。
@@ -512,7 +512,7 @@ assigned_shelters.csv / sheltermatch_review.zip
 
 **ジオメトリ品質の調査**
 
-公式ハザード11ZIP（182,424件）を `experiments/hazard_geometry_audit.ipynb` で調査した結果、`is_valid=False`
+公式ハザード11ZIP（182,424件）を `experiments/hazard_geometry_audit/hazard_geometry_audit.ipynb` で調査した結果、`is_valid=False`
 のため除外されていたジオメトリが1,354件あり、全件が `make_valid()` でPolygon / MultiPolygonへ復元できた。
 復元前後で候補避難所地点の判定が3件変わったため、本体で `is_valid=False` のPolygon / MultiPolygonのみを直して
 使うようにした（詳細は [docs/hazard-data.md](./hazard-data.md) の「ジオメトリの扱い」）。

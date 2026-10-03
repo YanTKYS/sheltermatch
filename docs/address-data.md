@@ -279,7 +279,7 @@ ABRで確認できなかった原因としては、ABRデータの更新時期�
   取得してください。過去に取得したZIPをプロジェクトの正本として扱いません。
 - 実際の住所CSV・変換済みCSV等、個人情報を含み得るデータは、いかなる形式でもコミットしません。
   前回との比較に使う変換済みCSVは、所属団体の規程に従って保管してください。
-- `experiments/address_conversion_test_input.csv` は、個人情報を含まない検証用サンプルとして
+- `experiments/address_geocoding/address_conversion_test_input.csv` は、個人情報を含まない検証用サンプルとして
   リポジトリ内に置いています。
 
 ### ABR更新時の再変換手順
