@@ -4,6 +4,10 @@
 公開している指定緊急避難場所データ（`skhb01`〜`skhb08`）を比べ、**件数・施設・名称・住所・座標にどの程度差があるか**
 を確認するための実験です。
 
+> **通常は [`gsi_shelter_compare.ipynb`](gsi_shelter_compare.ipynb) を Google Colab で開き、上から順に実行します。**
+> [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YanTKYS/sheltermatch/blob/main/experiments/gsi_shelter_compare/gsi_shelter_compare.ipynb)
+> （コマンドラインで同じ比較を再現したい場合は、補助として `compare.py` も使えます。→ [実行方法](#実行方法)）
+
 ## この実験の位置づけ（必ずお読みください）
 
 * **GSI を正解データとして BODIK を評価する実験ではありません。** 2つの公開データの**差異を把握するための比較**です。
@@ -28,18 +32,34 @@
 
 | ファイル | 内容 |
 | --- | --- |
-| `compare.py` | 実行用スクリプト。BODIK・GSI の取得（通信）、CSV出力、要約表示を行う |
-| `compare_logic.py` | 通信しない比較ロジック（正規化・タイル範囲・GSI内の重複整理・突き合わせ・集計）。`test/test_gsi_shelter_compare.py` が完全な架空データで確認する |
+| `gsi_shelter_compare.ipynb` | **比較・確認用の主な入口**（Google Colab 用Notebook）。取得 → 重複整理 → 比較 → 集計表示 → CSV確認・ダウンロードまでを、表（DataFrame）で確認しながら実行する |
+| `compare.py` | CLIで同じ比較を再現したい場合の補助。BODIK・GSI の取得（通信）・CSV出力・要約表示の関数を持ち、Notebookもこれらの関数を読み込んで使う |
+| `compare_logic.py` | 通信しない比較ロジック（正規化・タイル範囲・GSI内の重複整理・突き合わせ・集計）の**正本**。Notebookにも `compare.py` にもコピーせず、どちらもここを読み込む。`test/test_gsi_shelter_compare.py` が完全な架空データで確認する |
 | `output/` | 実行時の成果物（結果CSV）。実行時に作られ、リポジトリにはコミットしない（`.gitignore` 済み） |
 
 ## 実行方法
+
+### Notebook（通常はこちら）
+
+1. [`gsi_shelter_compare.ipynb`](gsi_shelter_compare.ipynb) を Google Colab で開きます（上のバッジ、または
+   GitHub 上の Notebook から「Open in Colab」）。
+2. 必要なら「利用者設定」のセルの値（`TILE_RING`・`EXACT_MAX_DISTANCE_M`・`NEAR_DISTANCE_M`）を確認します。通常は変更不要です。
+3. 上のセルから順に実行します。比較ロジック（`compare_logic.py`・`compare.py`）は、Notebook の初期セルが GitHub の
+   `main`（`COMPARE_LOGIC_REF`）から自動で取得します。同じフォルダ（またはリポジトリを開いている場合は
+   `experiments/gsi_shelter_compare/`）に両ファイルがあれば、そちらを使います。
+4. Notebook上で、status別件数・`review_needed`（理由別の件数と全件）・`bodik_only`・`gsi_only`（全件）・座標差・
+   表記差を表で確認できます。最後のセルが、結果CSV（`gsi_bodik_comparison.csv`・`gsi_unique_shelters.csv`）を
+   保存し、Colab ではダウンロードします（Colab 以外では保存だけ行います）。
+
+件数は公開データの更新で変わることがあるため、Notebookには固定値を埋め込んでいません。
+
+### コマンドライン（補助）
 
 ```bash
 python3 -m pip install requests geopy   # 未導入の場合のみ（Google Colab では geopy の導入だけで足ります）
 python3 experiments/gsi_shelter_compare/compare.py
 ```
 
-Google Colab では、リポジトリを取得したうえで `!python3 experiments/gsi_shelter_compare/compare.py` を実行します。
 公開データの読み取りだけで、APIキーは不要です。主なオプション（`--help` 参照）:
 
 * `--output-dir DIR` 結果CSVの出力先（既定: `output/`）
@@ -118,7 +138,7 @@ GSI は災害種別ごとにレイヤーが分かれているため、同じ施�
 
 ## 出力
 
-実行時に次を表示します: BODIK施設数 / GSI取得Feature数（災害種別レイヤー重複込み）/ GSIユニーク施設数 /
+Notebook・`compare.py` とも、実行時に次を表示します（Notebookは表で、`compare.py` はテキストで）: BODIK施設数 / GSI取得Feature数（災害種別レイヤー重複込み）/ GSIユニーク施設数 /
 `exact_match`・`bodik_only`・`gsi_only`・`review_needed` の件数 / 座標差の最大・中央値・平均と10m・30m・100m超の件数 /
 名称・住所の表記差 / BODIKだけ・GSIだけの施設の一覧 / `review_needed` の内訳。
 
@@ -133,6 +153,10 @@ GSI は災害種別ごとにレイヤーが分かれているため、同じ施�
 
 ## テスト
 
-`test/test_gsi_shelter_compare.py` が、`compare_logic.py` を完全な架空データで確認します（GSI内の重複施設の統合、
-`exact_match`・`bodik_only`・`gsi_only`・`review_needed`、座標距離・集計、正規化）。外部通信はしません。通信を行う
-`compare.py` はテストから import せず、CI でも実行しません。
+* `test/test_gsi_shelter_compare.py`: `compare_logic.py` を完全な架空データで確認します（GSI内の重複施設の統合、
+  `exact_match`・`bodik_only`・`gsi_only`・`review_needed`、座標距離・集計、正規化）。
+* `test/test_gsi_shelter_compare_notebook.py`: Notebookを**実行せず**、ソースを静的に確認します（`compare_logic.py` を使い
+  ロジックをコピーしていないこと、BODIKの resource_id が本番 `sheltermatch.ipynb` と同じこと、GSIレイヤーが
+  `skhb01`〜`skhb08` であること、`SHELTER_SOURCE`・要支援者CSV・ハザードを扱わないこと、件数を固定値で埋め込んでいないこと等）。
+
+どちらも外部通信はしません。通信を行う `compare.py` の `main()` やNotebookはテストから実行せず、CI でも実行しません。
