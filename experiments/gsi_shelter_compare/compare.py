@@ -1,6 +1,6 @@
 """BODIKと国土地理院（GSI）の指定緊急避難場所データを比較する実験。
 
-本番の sheltermatch.ipynb / src/ からは独立しており、どこからも import されない。比較・評価だけが目的で、
+本番の sheltermatch.ipynb / src/ からは独立しており、本番コードからは import されない。比較・評価だけが目的で、
 データソースの切り替えや、どちらかのデータを正解とみなす判定は行わない。詳しくは README.md を参照。
 
 比較・確認の主な入口は gsi_shelter_compare.ipynb（Google Colab 用Notebook）で、このファイルは、コマンドラインで
