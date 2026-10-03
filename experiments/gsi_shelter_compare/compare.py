@@ -3,6 +3,10 @@
 本番の sheltermatch.ipynb / src/ からは独立しており、どこからも import されない。比較・評価だけが目的で、
 データソースの切り替えや、どちらかのデータを正解とみなす判定は行わない。詳しくは README.md を参照。
 
+比較・確認の主な入口は gsi_shelter_compare.ipynb（Google Colab 用Notebook）で、このファイルは、コマンドラインで
+同じ比較を再現したい場合の補助。Notebookもこのファイルの取得・CSV出力の関数と compare_logic.py を読み込んで
+使う（ロジックは compare_logic.py にだけある）。
+
 使い方:
     python3 -m pip install requests geopy        # 未導入の場合のみ
     python3 experiments/gsi_shelter_compare/compare.py [--output-dir DIR]
