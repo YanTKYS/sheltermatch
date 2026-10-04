@@ -441,6 +441,14 @@ class AbrPreparationTest(unittest.TestCase):
                 self.assertIsNone(result["latitude"])
         self.assertEqual(CHIBAN_ONLY.geocode("糸満市字糸満673番地2")["status"], "matched")
 
+    def test_ZIPとして開けないファイルは無視して_ほかのZIPは読み込む(self):
+        # ダウンロードが途中で切れたZIP等。生のエラーで止まらず、不足したデータは「不足」として表示する
+        run = NotebookRun({**chiban_zips(), "mt_rsdtdsp_blk_pref47.csv.zip": b"PK\x03\x04broken"})
+        printed = run.printed_text()
+        self.assertIn("'mt_rsdtdsp_blk_pref47.csv.zip' はZIPファイルとして開けないため無視する", printed)
+        self.assertTrue(run.env["master_status"]["merge"])
+        self.assertEqual(run.geocode("糸満市字糸満673番地2")["status"], "matched")
+
 
 class ResidentialDataIntegrityTest(unittest.TestCase):
     """住居表示データが不完全・不整合な場合は、曖昧な座標を作らずに止めること。"""

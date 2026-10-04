@@ -1,6 +1,6 @@
 """sheltermatch.ipynb を、外部通信なしで最後まで実行する回帰テスト（完全な架空データ）。
 
-Notebook のセルは書き換えず、取得先の版（SHELTERMATCH_CODE_REF=v1.2.0）も変えずに、
+Notebook のセルは書き換えず、取得先の版（SHELTERMATCH_CODE_REF=v1.2.1）も変えずに、
 GitHub からの取得だけを作業ツリーの src/ へ差し替えて実行する（test/notebook_harness.py）。
 新しい src/ と Notebook の組み合わせで、結果CSV・レビューZIP・集計が揃うことを確認する。
 
@@ -82,15 +82,15 @@ class NotebookEndToEndWithHazardTest(unittest.TestCase):
             names = archive.namelist()
         self.assertIn("sheltermatch_review/review.html", names)
         self.assertTrue(any(n.startswith("sheltermatch_review/assets/hazard_") for n in names))
-        self.assertIn("sheltermatch_review/assets/basemap_itoman.png", names)
+        self.assertIn("sheltermatch_review/assets/basemap.png", names)
         # 道路経路・OpenStreetMapの道路データに関するファイルは含めない
         self.assertFalse([n for n in names if "osm" in n.lower() or "road" in n.lower()])
 
     def test_外部通信はGitHubの取得とBODIK_APIだけ_道路データは取得しない(self):
         for url in self.run_.urls:
             self.assertTrue(
-                url.startswith("https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.2.0/src/")
-                or url == "https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.2.0/configs/itoman-city.json"
+                url.startswith("https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.2.1/src/")
+                or url == "https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.2.1/configs/itoman-city.json"
                 or url.startswith("https://data.bodik.jp/api/action/datastore_search"),
                 url,
             )
@@ -102,14 +102,14 @@ class NotebookEndToEndWithHazardTest(unittest.TestCase):
             "hazard/hazard_loader.py", "assignment/shelter_assignment.py", "config/municipality_config.py",
             "review/review_builder.py", "review/review_template.html"]))
         configs = [u for u in self.run_.urls if "/configs/" in u]
-        self.assertEqual(configs, ["https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.2.0/configs/itoman-city.json"])
+        self.assertEqual(configs, ["https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.2.1/configs/itoman-city.json"])
 
-    def test_v1_2_0のsrcと設定ファイルを取得する(self):
-        self.assertEqual(self.run_.namespace["SHELTERMATCH_CODE_REF"], "v1.2.0")
+    def test_v1_2_1のsrcと設定ファイルを取得する(self):
+        self.assertEqual(self.run_.namespace["SHELTERMATCH_CODE_REF"], "v1.2.1")
         # 外部モジュールも設定ファイルも、同じ版（タグ）から取得する（mainとの混在なし）
         for url in self.run_.urls:
             if url.startswith("https://raw.githubusercontent.com/"):
-                self.assertTrue(url.startswith("https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.2.0/"), url)
+                self.assertTrue(url.startswith("https://raw.githubusercontent.com/YanTKYS/sheltermatch/v1.2.1/"), url)
 
     def test_ダウンロードされるのはCSVとZIP(self):
         self.assertEqual(self.run_.files.downloads, ["assigned_shelters.csv", "sheltermatch_review.zip"])
@@ -161,14 +161,15 @@ class NotebookSourceTest(unittest.TestCase):
         self.assertIsNone(re.search(r"^TOP_N\s*=", source, re.M))
         self.assertNotIn("TOP_N", source)
 
-    def test_利用者設定は設定名とNotebook既定値の2項目だけ(self):
-        # 自治体の切替は CONFIG_NAME だけ。ほかの2項目はNotebookの既定値で、設定ファイルに値があればそちらが優先される
+    def test_利用者設定は設定名と2項目だけ(self):
+        # 自治体の切替は CONFIG_NAME だけ。ほかの2項目は既定では None（設定ファイルの値に従う）で、
+        # 値を書き込んだときだけ設定ファイルの値より優先される
         settings = [c for c in code_cells() if c.startswith("# ===== 利用者設定")][0]
         names = re.findall(r"^([A-Z_]+) = ", settings, re.M)
-        self.assertEqual(names, ["CONFIG_NAME", "ENABLE_HAZARD_CHECK", "SHELTER_SOURCE"])
+        self.assertEqual(names, ["CONFIG_NAME", "ENABLE_HAZARD_CHECK", "SHELTER_SOURCE", "NOTEBOOK_SETTINGS"])
         self.assertIn('CONFIG_NAME = "itoman-city"', settings)
-        self.assertIn("ENABLE_HAZARD_CHECK = False", settings)
-        self.assertIn('SHELTER_SOURCE = "api"', settings)
+        self.assertIn("ENABLE_HAZARD_CHECK = None", settings)
+        self.assertIn("SHELTER_SOURCE = None", settings)
 
 
 if __name__ == "__main__":

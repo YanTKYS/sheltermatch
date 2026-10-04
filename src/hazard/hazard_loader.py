@@ -70,7 +70,16 @@ def safe_extract_zip(zip_bytes, extract_dir):
     エントリが1件でもあれば、展開を一切行わずに例外を送出する（パストラバーサル対策。
     全エントリを先に検査してから展開する）。"""
     extract_dir_abs = Path(extract_dir).resolve()
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zip_file:
+    try:
+        zip_file = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    except zipfile.BadZipFile as error:
+        # ダウンロードが途中で切れたファイル等。生の例外のまま止めず、ほかのファイルの読込結果とあわせて
+        # 「読み込めなかったファイル」として表示する（load_uploaded_hazards が RuntimeError を集約する）。
+        raise RuntimeError(
+            "ZIPファイルとして開けませんでした（ダウンロードが途中で切れている可能性があります）。"
+            "配布元から取得し直してください。"
+        ) from error
+    with zip_file:
         resolved_members = []
         for member in zip_file.infolist():
             name = _decode_zip_entry_name(member)
@@ -600,7 +609,8 @@ def load_uploaded_hazards(uploaded_hazards, ask_hazard_type=None):
         raise RuntimeError(
             "ENABLE_HAZARD_CHECK=True ですが、有効なハザード区域(Polygon/MultiPolygon)を1件も読み込めませんでした。"
             "GeoJSON/ZIPファイルが正しくアップロードされているか、ジオメトリ形式を確認してください。"
-            "ハザード判定を行わない場合は、上の「利用者設定」で ENABLE_HAZARD_CHECK=False にしてください。"
+            "ハザード判定を行わない場合は、上の「利用者設定」セルで ENABLE_HAZARD_CHECK = False と書き込み、"
+            "「利用者設定」セルから順に実行し直してください。"
         )
 
     print(f"ハザードデータを合計 {len(hazard_gdf)}件読み込みました。")

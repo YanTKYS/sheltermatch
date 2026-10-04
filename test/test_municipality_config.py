@@ -37,7 +37,7 @@ mc = load_src_module("config/municipality_config.py", "municipality_config_under
 EXPECTED_ITOMAN_RESOURCE_ID = "3132a0a4-f522-4b2d-bf18-f106d8b3a5ae"
 RAW_REPO_URL = "https://raw.githubusercontent.com/YanTKYS/sheltermatch/test-ref"
 # 通常運用のNotebook（sheltermatch.ipynb・address_geocode.ipynb）が、外部モジュールと設定ファイルを取得する版（タグ）
-EXPECTED_RELEASE_REF = "v1.2.0"
+EXPECTED_RELEASE_REF = "v1.2.1"
 
 
 def valid_config(**sections):
@@ -341,11 +341,11 @@ class SheltermatchNotebookConfigTest(unittest.TestCase):
     def files(self, config):
         return {config_url(): json.dumps(config, ensure_ascii=False).encode("utf-8")}
 
-    def test_Notebookの既定値(self):
+    def test_利用者設定の初期値は指定なし(self):
         settings = cell_starting_with(REPO / "sheltermatch.ipynb", "# ===== 利用者設定")
         self.assertIn('CONFIG_NAME = "itoman-city"', settings)
-        self.assertIn("ENABLE_HAZARD_CHECK = False", settings)
-        self.assertIn('SHELTER_SOURCE = "api"', settings)
+        self.assertIn("ENABLE_HAZARD_CHECK = None", settings)
+        self.assertIn("SHELTER_SOURCE = None", settings)
 
     def test_JSONの値がNotebook既定値より優先される(self):
         config = valid_config(sheltermatch={"enable_hazard_check": True, "shelter_source": "csv"})
@@ -369,11 +369,33 @@ class SheltermatchNotebookConfigTest(unittest.TestCase):
         self.assertIn("[JSON]", output)
         self.assertIn("[Notebook既定値]", output)
 
-    def test_Notebook既定値を書き換えても_キーが無ければその値になる(self):
-        namespace, _, _ = self.run_cells(
-            self.files(valid_config()),
-            settings_edit=lambda s: s.replace("ENABLE_HAZARD_CHECK = False", "ENABLE_HAZARD_CHECK = True"))
-        self.assertIs(namespace["ENABLE_HAZARD_CHECK"], True)
+    def test_利用者設定セルに書き込んだ値は_JSONの値より優先される(self):
+        # 糸満市の設定ファイルは enable_hazard_check=true・shelter_source="api"。職員が今回だけ
+        # ハザード確認なし・CSVの避難所一覧で実行したいときに、書き込んだ値が無視されないこと
+        config = valid_config(sheltermatch={"enable_hazard_check": True, "shelter_source": "api"})
+        namespace, output, _ = self.run_cells(
+            self.files(config),
+            settings_edit=lambda s: s.replace("ENABLE_HAZARD_CHECK = None", "ENABLE_HAZARD_CHECK = False")
+                                     .replace("SHELTER_SOURCE = None", 'SHELTER_SOURCE = "csv"'))
+        self.assertIs(namespace["ENABLE_HAZARD_CHECK"], False)
+        self.assertEqual(namespace["SHELTER_SOURCE"], "csv")
+        self.assertIn("ENABLE_HAZARD_CHECK = False [Notebookで指定]", output)
+        self.assertIn("SHELTER_SOURCE      = csv   [Notebookで指定]", output)
+
+    def test_設定ファイル読込セルだけを再実行しても_JSONの値を指定と取り違えない(self):
+        config = valid_config(sheltermatch={"enable_hazard_check": True})
+        namespace, _, _ = self.run_cells(self.files(config))
+        config_cell = cell_starting_with(REPO / "sheltermatch.ipynb", "# ===== 設定ファイル読込")
+        output = io.StringIO()
+        with isolated_cwd(), mock.patch("requests.get", FakeGitHub(self.files(config))), \
+                contextlib.redirect_stdout(output):
+            exec(compile(config_cell, "<設定ファイル読込>", "exec"), namespace)
+        self.assertIn("ENABLE_HAZARD_CHECK = True [JSON]", output.getvalue())
+
+    def test_利用者設定セルの不正な値では止まる(self):
+        with self.assertRaises(ValueError):
+            self.run_cells(self.files(valid_config()),
+                           settings_edit=lambda s: s.replace("SHELTER_SOURCE = None", 'SHELTER_SOURCE = "gsi"'))
 
     def test_自治体固有の値は設定ファイルから取る(self):
         namespace, output, github = self.run_cells(self.files(valid_config()))
