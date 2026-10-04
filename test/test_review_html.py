@@ -113,6 +113,18 @@ class ReviewHtmlTest(unittest.TestCase):
                 self.assertIn(hazard["key"], {layer["key"] for layer in layers.values()})
 
 
+    def test_作成日時は日本時間(self):
+        # Google Colab の時計はUTC。UTCのまま表示すると、作成日時が9時間ずれる
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        generated_at = datetime.strptime(self.data["generated_at"], "%Y-%m-%d %H:%M")
+        now_jst = datetime.now(ZoneInfo("Asia/Tokyo")).replace(tzinfo=None)
+        self.assertLess(abs(now_jst - generated_at), timedelta(minutes=10))
+
+    def test_背景地図の画像名は自治体によらない(self):
+        self.assertEqual(self.data["basemap"]["image"], "assets/basemap.png")
+
+
 class ReviewConsistencyCheckTest(unittest.TestCase):
     """レビューHTMLの内容が結果CSVと食い違うときは、HTMLを作らずに止まる。"""
 

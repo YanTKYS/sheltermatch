@@ -82,7 +82,7 @@ class NotebookEndToEndWithHazardTest(unittest.TestCase):
             names = archive.namelist()
         self.assertIn("sheltermatch_review/review.html", names)
         self.assertTrue(any(n.startswith("sheltermatch_review/assets/hazard_") for n in names))
-        self.assertIn("sheltermatch_review/assets/basemap_itoman.png", names)
+        self.assertIn("sheltermatch_review/assets/basemap.png", names)
         # 道路経路・OpenStreetMapの道路データに関するファイルは含めない
         self.assertFalse([n for n in names if "osm" in n.lower() or "road" in n.lower()])
 
@@ -161,14 +161,15 @@ class NotebookSourceTest(unittest.TestCase):
         self.assertIsNone(re.search(r"^TOP_N\s*=", source, re.M))
         self.assertNotIn("TOP_N", source)
 
-    def test_利用者設定は設定名とNotebook既定値の2項目だけ(self):
-        # 自治体の切替は CONFIG_NAME だけ。ほかの2項目はNotebookの既定値で、設定ファイルに値があればそちらが優先される
+    def test_利用者設定は設定名と2項目だけ(self):
+        # 自治体の切替は CONFIG_NAME だけ。ほかの2項目は既定では None（設定ファイルの値に従う）で、
+        # 値を書き込んだときだけ設定ファイルの値より優先される
         settings = [c for c in code_cells() if c.startswith("# ===== 利用者設定")][0]
         names = re.findall(r"^([A-Z_]+) = ", settings, re.M)
-        self.assertEqual(names, ["CONFIG_NAME", "ENABLE_HAZARD_CHECK", "SHELTER_SOURCE"])
+        self.assertEqual(names, ["CONFIG_NAME", "ENABLE_HAZARD_CHECK", "SHELTER_SOURCE", "NOTEBOOK_SETTINGS"])
         self.assertIn('CONFIG_NAME = "itoman-city"', settings)
-        self.assertIn("ENABLE_HAZARD_CHECK = False", settings)
-        self.assertIn('SHELTER_SOURCE = "api"', settings)
+        self.assertIn("ENABLE_HAZARD_CHECK = None", settings)
+        self.assertIn("SHELTER_SOURCE = None", settings)
 
 
 if __name__ == "__main__":

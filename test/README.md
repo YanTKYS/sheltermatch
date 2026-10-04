@@ -98,7 +98,7 @@ GitHub からの取得だけを作業ツリーの `src/` へ差し替える（`n
   「Open In Colab」バッジ（main 上の Notebook 自身を開くURL）があることの静的テスト。Notebook の追加時の付け忘れを検知する。
   Notebook は実行せず、外部通信もしない。
 * `test_municipality_config.py`: 自治体ごとの設定ファイル（`configs/`）と読込モジュールの回帰テスト（設定の検証、JSONと
-  Notebook既定値の優先順位、取得失敗・不正値での停止、通常運用のNotebookが外部モジュールと設定ファイルを同じ版から
+  Notebook既定値・「利用者設定」セルに書き込んだ値の優先順位、取得失敗・不正値での停止、通常運用のNotebookが外部モジュールと設定ファイルを同じ版から
   取得すること）。外部通信は行わない。
 * `test_gsi_shelter_compare.py` / `test_gsi_shelter_compare_notebook.py`: 比較実験（`experiments/gsi_shelter_compare/`）の
   比較ロジックと、Notebookの静的な確認。外部通信は行わない。

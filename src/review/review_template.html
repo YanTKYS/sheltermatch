@@ -289,9 +289,6 @@
   // 分からなくなる（背景地図は最大でもズーム15相当の画像のため、18より先は拡大しても細部は増えない）。
   var MIN_ZOOM = 10;
   var MAX_ZOOM = 18;
-  // 起動直後（要支援者を選ぶ前）の表示位置
-  var INITIAL_CENTER = [26.125, 127.68];
-  var INITIAL_ZOOM = 13;
 
   function initMap() {
     if (typeof L === "undefined") {
@@ -304,7 +301,9 @@
         "検索・候補一覧はこのまま利用できます。");
       return;
     }
-    map = L.map("map", { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM }).setView(INITIAL_CENTER, INITIAL_ZOOM);
+    // 起動直後は、背景地図の範囲（要支援者・避難所の全体）を表示する。座標の無い要支援者を選んでいても、
+    // 対象の自治体が映るようにするため（特定の市の位置を決め打ちしない）。
+    map = L.map("map", { minZoom: MIN_ZOOM, maxZoom: MAX_ZOOM }).fitBounds(BASEMAP.bounds);
     map.createPane("basemapPane").style.zIndex = 200;
     map.createPane("hazardPane").style.zIndex = 300;
     featureLayer = L.layerGroup().addTo(map);
@@ -824,16 +823,11 @@
     fitView();
   }
 
-  // 地図を全体が見える位置へ戻す。背景地図の範囲（要支援者・避難所の全体を覆う範囲）を使い、
-  // 背景地図の情報が無い場合は起動直後の表示位置にする。
+  // 地図を全体が見える位置（背景地図の範囲＝要支援者・避難所の全体を覆う範囲）へ戻す。
   function resetMapView() {
     if (!map) { return; }
     map.invalidateSize({ animate: false });
-    if (BASEMAP && BASEMAP.bounds) {
-      map.fitBounds(BASEMAP.bounds);
-    } else {
-      map.setView(INITIAL_CENTER, INITIAL_ZOOM);
-    }
+    map.fitBounds(BASEMAP.bounds);
   }
 
   function fitView() {

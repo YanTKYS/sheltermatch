@@ -83,6 +83,16 @@ class HazardCategoryTest(unittest.TestCase):
         self.assertEqual(hazard_loader.detect_hazard("47007_takasiosinnsuisoutei_22itoman.zip").category, "高潮")
         self.assertIsNone(hazard_loader.detect_hazard("unknown.zip"))
 
+    def test_壊れたZIPは_ほかのファイルとあわせて読み込めなかったファイルとして表示して止まる(self):
+        # ダウンロードが途中で切れたZIP等。生の例外（BadZipFile）で止まらず、どのファイルが読めなかったかを示す
+        uploads = dict(fake_data.hazard_geojson_uploads())
+        uploads["A33-25_47_GEOJSON.zip"] = zip_bytes({"area.geojson": b"{}"})[:40]
+        with self.assertRaises(RuntimeError) as raised:
+            quiet(hazard_loader.load_uploaded_hazards, uploads)
+        message = str(raised.exception)
+        self.assertIn("A33-25_47_GEOJSON.zip", message)
+        self.assertIn("ZIPファイルとして開けませんでした", message)
+
     def test_空のレイヤーにも大分類の列がある(self):
         self.assertIn("hazard_category", hazard_loader.empty_hazard_layer().columns)
 

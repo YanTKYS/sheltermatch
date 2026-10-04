@@ -16,7 +16,7 @@ sheltermatch.ipynb はGoogle Colabでの実行時に、このファイルと rev
 出力するZIPの中身:
     sheltermatch_review/review.html                         … 全要支援者のデータを埋め込んだ1ファイル
     sheltermatch_review/assets/hazard_*.png                 … ハザード区域の表示用画像（大分類ごとに1枚）
-    sheltermatch_review/assets/basemap_itoman.png           … 表示範囲の背景地図
+    sheltermatch_review/assets/basemap.png                  … 表示範囲の背景地図
     sheltermatch_review/assets/js, css, images              … Leaflet本体（地図ライブラリ）
     sheltermatch_review/assets/leaflet-LICENSE.txt          … Leafletの公式LICENSE本文
 """
@@ -25,9 +25,10 @@ import io
 import json
 import math
 import shutil
-import time
 import zipfile
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import geopandas as gpd
 import matplotlib
@@ -91,7 +92,7 @@ GSI_TILE_SIZE = 256
 # BASEMAP_MAX_TILES以下になった最初のズームを使う（安全策）。どのズームでも収まらない
 # 場合は、黙って大量取得せず処理を中止する。上限200枚は、zoom15で概ね市街地1つ分の
 # 範囲を想定した値。
-BASEMAP_FILENAME = "basemap_itoman.png"
+BASEMAP_FILENAME = "basemap.png"
 BASEMAP_ZOOM_CANDIDATES = [15, 14, 13, 12, 11]
 BASEMAP_MAX_TILES = 200
 
@@ -275,7 +276,7 @@ def render_offline_basemap(bounds, assets_dir):
     notice_path.write_text(
         "背景地図について\n"
         "\n"
-        "このフォルダの basemap_itoman.png は、"
+        f"このフォルダの {BASEMAP_FILENAME} は、"
         "国土地理院の地理院タイル（淡色地図）を、このレビュー成果物を作成した時点で"
         "取得し、画像として保存したものです。\n"
         "\n"
@@ -478,7 +479,8 @@ def build_review_data(final_df, review_rows, hazard_layers, layer_specs, basemap
         ]
 
     return {
-        "generated_at": time.strftime("%Y-%m-%d %H:%M"),
+        # Google Colab の時計はUTCのため、日本時間に直して表示する（そのままだと9時間ずれる）
+        "generated_at": datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d %H:%M"),
         "top_n": CANDIDATE_COUNT,
         "hazard_layers": hazard_layers,
         # ハザード判定を実施したか（実施しなかった場合、画面にはハザードの集計・絞り込みを出さない）

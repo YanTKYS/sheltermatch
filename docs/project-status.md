@@ -262,11 +262,11 @@ JageocoderとABR Geocoder（`@digital-go-jp/abr-geocoder`、および `abrdb`/`a
   入力の読み直しに失敗した場合や設定・入力のセルを再実行した場合の前回結果の無効化、
   前回の結果CSVを再投入した場合の結果列の置き換え
 
-Notebookの利用者設定は、自治体の設定名 `CONFIG_NAME` と、Notebookの既定値である `ENABLE_HAZARD_CHECK`・
-`SHELTER_SOURCE` だけである（旧 `TOP_N`・`ENABLE_ROAD_ROUTES` は廃止）。自治体名・BODIKのresource_id・通常使う設定は
-`configs/<CONFIG_NAME>.json`（糸満市は `itoman-city.json`）にまとめ、設定ファイルに値があればそちらを優先し、
-項目が無ければNotebookの既定値を使う。設定ファイルを取得・解釈できない場合は、既定値で続行せず止まる
-（[configs/README.md](../configs/README.md)）。
+Notebookの利用者設定は、自治体の設定名 `CONFIG_NAME` と、`ENABLE_HAZARD_CHECK`・`SHELTER_SOURCE` だけである
+（旧 `TOP_N`・`ENABLE_ROAD_ROUTES` は廃止）。自治体名・BODIKのresource_id・通常使う設定は
+`configs/<CONFIG_NAME>.json`（糸満市は `itoman-city.json`）にまとめる。`ENABLE_HAZARD_CHECK`・`SHELTER_SOURCE` は
+「利用者設定」セルに書き込んだ値 → 設定ファイルの値 → Notebookの既定値 の順に決まる（初期値は `None`＝指定なし）。
+設定ファイルを取得・解釈できない場合は、既定値で続行せず止まる（[configs/README.md](../configs/README.md)）。
 Notebookは osmnx を導入せず、OpenStreetMap の道路データも取得しない。
 
 結果CSVの出力セルは、レビューHTMLの出力より前にある。レビューHTMLの作成に失敗しても、正式成果物である結果CSVは
@@ -658,6 +658,6 @@ assigned_shelters.csv / sheltermatch_review.zip
 | [docs/road-routes-check.md](./road-routes-check.md) | 道路に沿った参考経路の確認記録（v1.0.0 時点。通常運用から外した機能） |
 | [docs/operation-check.md](./operation-check.md) | 操作導線・エラー処理の確認記録 |
 | [docs/performance-test.md](./performance-test.md) | 処理時間の確認記録 |
-| [docs/bugfix-2026-09-21.md](./bugfix-2026-09-21.md) / [09-22](./bugfix-2026-09-22.md) / [09-23](./bugfix-2026-09-23.md) | 通常業務で支障となる不具合の修正記録 |
+| [docs/bugfix-2026-09-21.md](./bugfix-2026-09-21.md) / [09-22](./bugfix-2026-09-22.md) / [09-23](./bugfix-2026-09-23.md) / [10-04](./bugfix-2026-10-04.md) | 通常業務で支障となる不具合の修正記録 |
 | [docs/pre-production-check-2026-09-28.md](./pre-production-check-2026-09-28.md) | 実データ投入前の事前確認（サンドボックスでの確認結果と対応案。その後の対応状況・実機確認の結果を追記） |
 | [test/README.md](../test/README.md) | 自動テスト・CIと実機確認の分担 |
