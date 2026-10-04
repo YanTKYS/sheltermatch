@@ -173,14 +173,16 @@ assigned_shelters.csv / sheltermatch_review.zip
 
 `sheltermatch.ipynb` は、Google Colab での実行時に `src/` 配下のファイルと、自治体の設定ファイル
 （`configs/<CONFIG_NAME>.json`）を GitHub から取得して読み込みます（設定ファイルも同じ版から取得します）。
-取得するのは版（タグ。`SHELTERMATCH_CODE_REF`）で固定しており、現在は `v1.2.0` です（`address_geocode.ipynb` が
-設定ファイルを取得する版も同じです）。実行時に「外部モジュール: v1.2.0」と表示します。`main` へ変更が入っても、
+取得するのは版（タグ。`SHELTERMATCH_CODE_REF`）で固定しており、現在は `v1.2.1` です（`address_geocode.ipynb` が
+設定ファイルを取得する版も同じです）。実行時に「外部モジュール: v1.2.1」と表示します。`main` へ変更が入っても、
 取得する版を更新するまで実行されるコードは変わりません（版の更新方法は
 [docs/project-status.md](docs/project-status.md) の「6.4」）。
-`v1.2.0` は、`v1.2.0` タグの作成と Google Colab での実機確認（結果CSV・レビューZIP）が完了するまで担当部署へ配布しません
+`v1.2.0` は公開済みのリリースで、`v1.2.1` はその不具合修正版です（業務仕様の変更はありません。
+[docs/bugfix-2026-10-04.md](docs/bugfix-2026-10-04.md)）。`v1.2.1` タグは、取得先を `v1.2.1` にしたPRのマージ後に作成し、
+Google Colab での実機確認（結果CSV・レビューZIP）が完了するまで担当部署へ配布しません
 （リリースの進め方は [docs/project-status.md](docs/project-status.md) の「6.4」）。それ以前に Google Drive 等へ保存した
 Notebook は、取得する版が古いままの場合があるため、最新の `main` の Notebook を使い、実行時に
-「外部モジュール: v1.2.0」と表示されることを確認してください。
+「外部モジュール: v1.2.1」と表示されることを確認してください。
 
 ## テスト
 
@@ -212,7 +214,7 @@ python3 -m unittest discover -s test
 v1.1.0 は、担当部署の業務要件に合わせて、必要な情報へ絞り込んだ版です（機能の追加ではありません）。
 v1.0.0 で実装・確認した道路経路・避難所側のハザード判定・避難所の災害種別対応などは、通常運用から外しました。
 v1.2.0 は、この業務要件を維持したまま、自治体ごとの設定ファイル（`configs/`）を導入した版です
-（業務仕様の変更はありません）。
+（業務仕様の変更はありません）。v1.2.1 は、v1.2.0 の不具合修正版です（業務仕様の変更はありません）。
 内容と理由は [docs/notes/v1.0.0-extended-features.md](docs/notes/v1.0.0-extended-features.md)、変更点は
 [CHANGELOG.md](CHANGELOG.md) を参照してください。
 

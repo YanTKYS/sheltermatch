@@ -370,9 +370,19 @@ v1.1.0 の目的は「要支援者本人の住所についてハザードの影�
 - 通常利用Notebook（`sheltermatch.ipynb`・`address_geocode.ipynb`）を README から直接Colabで開ける導線を追加した
 - Notebook追加時のバッジ付け忘れを検知する静的テストを追加した
 
-## 2026-10-04（バグ修正）
+## 2026-10-04（v1.2.1: v1.2.0 の不具合修正）
 
 詳細: [docs/bugfix-2026-10-04.md](docs/bugfix-2026-10-04.md)
+
+`v1.2.0`（公開済み。タグは PR #54 のマージコミットを指したまま変更しない）に対する不具合修正版。
+業務仕様（候補1〜3・直線距離順・本人住所のみのハザード判定・結果CSV14列・`address_geocode` の5列）と、
+各モジュールのAPIバージョンは変更なし。
+
+### Release
+
+- `sheltermatch.ipynb` と `address_geocode.ipynb` が取得する版（`SHELTERMATCH_CODE_REF`）を `v1.2.0` から `v1.2.1` へ変更した。
+  `src/` と `configs/` は同じ `v1.2.1` タグから取得する（`main` とタグを混在させない）
+- `v1.2.1` タグは、このPRのマージ後に、人間がマージコミットへ新規作成する。Google Colab での実機確認後に配布する
 
 ### Fixed
 

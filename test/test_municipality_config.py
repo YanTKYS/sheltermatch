@@ -37,7 +37,7 @@ mc = load_src_module("config/municipality_config.py", "municipality_config_under
 EXPECTED_ITOMAN_RESOURCE_ID = "3132a0a4-f522-4b2d-bf18-f106d8b3a5ae"
 RAW_REPO_URL = "https://raw.githubusercontent.com/YanTKYS/sheltermatch/test-ref"
 # 通常運用のNotebook（sheltermatch.ipynb・address_geocode.ipynb）が、外部モジュールと設定ファイルを取得する版（タグ）
-EXPECTED_RELEASE_REF = "v1.2.0"
+EXPECTED_RELEASE_REF = "v1.2.1"
 
 
 def valid_config(**sections):

@@ -1,6 +1,6 @@
 """sheltermatch.ipynb のセルを、外部通信なしで順に実行するためのテスト用ハーネス（完全な架空データ用）。
 
-通常運用の Notebook は、`SHELTERMATCH_CODE_REF`（現在は v1.2.0）の `src/` と `configs/` を GitHub から取得する。
+通常運用の Notebook は、`SHELTERMATCH_CODE_REF`（現在は v1.2.1）の `src/` と `configs/` を GitHub から取得する。
 このハーネスは **Notebook のセルを書き換えず**、取得先の版を `main` へ戻すこともせず、次のものだけを差し替える。
 
     google.colab.files       アップロード＝指定した内容を順に返す / ダウンロード＝記録のみ
