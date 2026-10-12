@@ -37,7 +37,13 @@ REQUIRED_IN_HTML = [
     "ハザード大分類別", "本人住所のハザード", "直線距離", "本人地点",
     "同じ人が複数のハザードに該当する場合は、それぞれに1件ずつ計上しています。",
     "各大分類の人数を合計しても「いずれかに該当」とは一致しない場合があります",
+    # 本人住所のハザード判定の4つの状態（「該当なし」と「未判定」「判定不可」を別の表示にする）
+    "ハザード区域に該当", "判定した結果、該当なし", "判定を実施していません", "判定できません",
+    "直線距離が短い順（候補1が最も短い）",
 ]
+
+# 候補の順位は直線距離だけで決めるため、候補に付けてはならない表現
+FORBIDDEN_CANDIDATE_WORDS = ["推奨", "最適", "おすすめ", "安全な避難所"]
 
 
 class ReviewHtmlTest(unittest.TestCase):
@@ -61,6 +67,19 @@ class ReviewHtmlTest(unittest.TestCase):
         lowered = self.html
         for word in FORBIDDEN_IN_HTML:
             self.assertNotIn(word, lowered, f"レビュー画面に残っています: {word}")
+
+    def test_候補を推奨や最適と表示しない(self):
+        for word in FORBIDDEN_CANDIDATE_WORDS:
+            self.assertNotIn(word, self.html, f"候補に付けてはならない表現が残っています: {word}")
+
+    def test_外部のURLを参照しない(self):
+        # ZIP展開後に外部通信なしで使えること（Leaflet・背景地図・ハザード画像は同梱のassets/から読む）。
+        # Leafletのライセンス表記などで使われるURLは、同梱のLeaflet側にあり、この画面には含まれない
+        import re
+        self.assertEqual(re.findall(r"""(?:src|href)\s*=\s*["']https?://""", self.html), [])
+        self.assertNotIn("@import", self.html)
+        self.assertNotIn("fetch(", self.html)
+        self.assertNotIn("XMLHttpRequest", self.html)
 
     def test_集計値(self):
         summary = self.data["summary"]
