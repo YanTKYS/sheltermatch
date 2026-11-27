@@ -420,3 +420,15 @@ v1.1.0 の目的は「要支援者本人の住所についてハザードの影�
 - 本文は16px、表・フォームは14px以上にし、チェックボックス・ボタンの押下範囲を広げた。フォーカスは黒と黄の二重の輪で示す。
   要支援者の一覧は行全体をボタンにし、Tabでは選択中の行に入り、↑↓・Home・Endで前後へ移れる
 - 検索結果0件・座標未取得・ハザード未判定の表示を、それぞれの欄で明示するようにした
+
+## 2026-11-27
+
+### Added
+
+- 自作部分に MIT License を付与（`LICENSE`）。適用範囲と、外部データ・ライブラリの権利の整理を `THIRD_PARTY_NOTICES.md` にまとめ、READMEへ明記した
+- `sheltermatch_review.zip` に、自作の画面部分の MIT License 全文（`LICENSE.txt`）と同梱物ごとの権利の整理（`THIRD_PARTY_NOTICES.txt`）を同梱
+  （`review.html` にも表示を追記）。Leaflet の `LICENSE` と背景地図の NOTICE は従来どおり同梱。計算・出力CSV・画面の機能・判定は変更なし
+- レビューZIPの `THIRD_PARTY_NOTICES.txt` に、避難所データの出典を追加。BODIK APIから既定の糸満市「指定緊急避難場所一覧」（CC BY 4.0）を取得した場合だけ、
+  出典・ライセンス・加工した旨を載せ、CSVの持ち込み・APIの取得失敗によるCSVへの切り替え・出典を確認していないデータには、糸満市の出典を付けない
+  （Notebookは、避難所一覧の取得方法を `shelters_valid.attrs` に残す。計算・出力CSV・判定は変更なし）
+- 背景地図の `gsi-basemap-NOTICE.txt` と `THIRD_PARTY_NOTICES.txt` に、地理院タイルを結合・切り出して画像に加工した旨を追記

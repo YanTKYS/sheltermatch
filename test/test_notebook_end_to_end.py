@@ -12,6 +12,7 @@ import json
 import re
 import sys
 import unittest
+from pathlib import Path
 
 import fake_data
 from notebook_harness import NotebookRun, code_cells
@@ -86,6 +87,43 @@ class NotebookEndToEndWithHazardTest(unittest.TestCase):
         # 道路経路・OpenStreetMapの道路データに関するファイルは含めない
         self.assertFalse([n for n in names if "osm" in n.lower() or "road" in n.lower()])
 
+    def test_レビューZIPに自作部分のMITと第三者通知を同梱する(self):
+        # リポジトリ直下のLICENSE（正式なMIT本文）と同じ内容を、ZIPにも入れる
+        repo_license = (Path(__file__).resolve().parent.parent / "LICENSE").read_text(encoding="utf-8")
+        with self.run_.review_zip() as archive:
+            names = archive.namelist()
+            self.assertIn("sheltermatch_review/LICENSE.txt", names)
+            self.assertIn("sheltermatch_review/THIRD_PARTY_NOTICES.txt", names)
+            self.assertEqual(archive.read("sheltermatch_review/LICENSE.txt").decode("utf-8"), repo_license)
+            notices = archive.read("sheltermatch_review/THIRD_PARTY_NOTICES.txt").decode("utf-8")
+        for expected in ("MIT License", "Leaflet", "assets/leaflet-LICENSE.txt", "gsi-basemap-NOTICE.txt",
+                         "MIT Licenseの対象外"):
+            self.assertIn(expected, notices)
+
+    def test_BODIK_APIで取得した糸満市のデータには出典とCC_BY_4_0を付ける(self):
+        with self.run_.review_zip() as archive:
+            notices = archive.read("sheltermatch_review/THIRD_PARTY_NOTICES.txt").decode("utf-8")
+        for expected in (
+            "糸満市", "指定緊急避難場所一覧", "https://data.bodik.jp/dataset/472107_evacuation_space",
+            "クリエイティブ・コモンズ 表示 4.0 国際（CC BY 4.0）", "https://creativecommons.org/licenses/by/4.0/",
+            "名称・緯度・経度の列だけを取り出し", "直線距離を計算して",
+        ):
+            self.assertIn(expected, notices)
+
+    def test_国土地理院の通知に加工した旨を書く(self):
+        from notebook_harness import load_src_module
+        builder = load_src_module("review/review_builder.py", "review_builder_gsi_notice")
+        text = builder.GSI_BASEMAP_NOTICE_TEXT
+        for expected in ("国土地理院", "https://maps.gsi.go.jp/", builder.GSI_TERMS_URL, "結合", "加工"):
+            self.assertIn(expected, text)
+
+    def test_既存の第三者通知は維持される(self):
+        # 実際の取得処理は差し替えて動かさないため、同梱するファイルの定義と、背景地図のNOTICEの文面で確認する
+        builder = self.run_.namespace["review_builder"]
+        self.assertIn("leaflet-LICENSE.txt", [package_path for _, package_path, _ in builder.LEAFLET_FILES])
+        self.assertEqual(builder.LEAFLET_VERSION, "1.9.4")
+        self.assertEqual(builder.GSI_ATTRIBUTION_TEXT, "国土地理院")
+
     def test_外部通信はGitHubの取得とBODIK_APIだけ_道路データは取得しない(self):
         for url in self.run_.urls:
             self.assertTrue(
@@ -141,6 +179,71 @@ class NotebookEndToEndWithoutHazardTest(unittest.TestCase):
             self.assertEqual(data["summary"]["without_coordinates"], 2)
             with run.review_zip() as archive:
                 self.assertFalse([n for n in archive.namelist() if "hazard_" in n])
+
+
+def shelters_csv_bytes():
+    """持ち込みの避難所一覧CSV（架空。自治体標準ODSの列名）。"""
+    lines = ["名称,緯度,経度"] + [f"{s['名称']},{s['緯度']},{s['経度']}" for s in fake_data.SHELTERS]
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+class ShelterDataNoticeTest(unittest.TestCase):
+    """避難所データの出典は、実際にそのデータを取得したときだけ付ける（別のデータへ誤って付けない）。"""
+
+    # 糸満市のデータの出典・ライセンスを表す文言（別のデータの通知に含まれてはならない）
+    ITOMAN_WORDS = ("糸満市", "472107_evacuation_space", "CC BY 4.0", "クリエイティブ・コモンズ",
+                    "creativecommons.org", "3132a0a4")
+
+    def notices_of(self, run):
+        with run.review_zip() as archive:
+            return archive.read("sheltermatch_review/THIRD_PARTY_NOTICES.txt").decode("utf-8")
+
+    def assert_no_itoman_attribution(self, notices):
+        for word in self.ITOMAN_WORDS:
+            self.assertNotIn(word, notices)
+
+    def test_CSVを指定したときは糸満市の出典を付けない(self):
+        run = NotebookRun(fake_data.residents_csv_bytes(), fake_data.SHELTERS)
+        run.shelters_csv = shelters_csv_bytes()
+        with run.execute(settings={"SHELTER_SOURCE": '"csv"'}):
+            notices = self.notices_of(run)
+            self.assertFalse([u for u in run.urls if u.startswith("https://data.bodik.jp/api/")])
+        self.assert_no_itoman_attribution(notices)
+        self.assertIn("利用者が用意したCSV", notices)
+
+    def test_API取得に失敗してCSVへ切り替えたときも糸満市の出典を付けない(self):
+        run = NotebookRun(fake_data.residents_csv_bytes(), fake_data.SHELTERS)
+        run.bodik_fails = True
+        run.shelters_csv = shelters_csv_bytes()
+        with run.execute():
+            notices = self.notices_of(run)
+            self.assertIn("BODIK APIから避難所一覧を取得できませんでした", run.output.getvalue())
+        self.assert_no_itoman_attribution(notices)
+        self.assertIn("利用者が用意したCSV", notices)
+
+    def test_出典を確認していないデータセットと出どころ不明には出典を付けない(self):
+        from notebook_harness import load_src_module
+        builder = load_src_module("review/review_builder.py", "review_builder_origin")
+        unknown_dataset = {"kind": "bodik_api", "resource_id": "00000000-0000-0000-0000-000000000000"}
+        for origin in (unknown_dataset, {"kind": "csv"}, {}, None, "bodik_api"):
+            text = builder.build_third_party_notices(origin)
+            self.assert_no_itoman_attribution(text)
+            self.assertIn("MIT License", text)
+        self.assertIn("出典・ライセンスを、BODIKの公式ページで確認", builder.build_third_party_notices(unknown_dataset))
+        # 出典を確認済みのデータセットには付く
+        known = builder.build_third_party_notices({"kind": "bodik_api", "resource_id": "3132a0a4-f522-4b2d-bf18-f106d8b3a5ae"})
+        self.assertIn("CC BY 4.0", known)
+        # CSVの種類で、既知のresource_idが入っていても、BODIK APIでなければ出典は付けない
+        self.assert_no_itoman_attribution(builder.build_third_party_notices(
+            {"kind": "csv", "resource_id": "3132a0a4-f522-4b2d-bf18-f106d8b3a5ae"}))
+
+    def test_避難所の出どころの記録は結果CSVや候補に影響しない(self):
+        with NotebookRun(fake_data.residents_csv_bytes(), fake_data.SHELTERS).execute() as api_run:
+            api_csv = api_run.result_csv_text()
+        run = NotebookRun(fake_data.residents_csv_bytes(), fake_data.SHELTERS)
+        run.shelters_csv = shelters_csv_bytes()
+        with run.execute(settings={"SHELTER_SOURCE": '"csv"'}):
+            self.assertEqual(run.result_csv_text(), api_csv)
 
 
 class NotebookSourceTest(unittest.TestCase):

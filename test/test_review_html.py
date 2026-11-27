@@ -211,6 +211,26 @@ class ReviewConsistencyCheckTest(unittest.TestCase):
         self.assertIn("hazard_category", str(caught.exception))
 
 
+class BasemapNoticeTest(unittest.TestCase):
+    def test_背景地図のNOTICEが書き出される(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from PIL import Image
+        from notebook_harness import load_src_module
+        builder = load_src_module("review/review_builder.py", "review_builder_basemap")
+        with tempfile.TemporaryDirectory() as tmp:
+            # 外部へ接続せず、地理院タイルの取得だけを灰色の画像に差し替える
+            with mock.patch.object(builder, "_fetch_gsi_tile",
+                                   lambda zoom, x, y: Image.new("RGB", (256, 256), "gray")):
+                builder.render_offline_basemap((26.10, 127.60, 26.11, 127.61), Path(tmp))
+            notice = (Path(tmp) / "gsi-basemap-NOTICE.txt").read_text(encoding="utf-8")
+        self.assertEqual(notice, builder.GSI_BASEMAP_NOTICE_TEXT)
+        self.assertIn("結合", notice)
+        self.assertIn("加工", notice)
+        self.assertIn("国土地理院", notice)
+
+
 class EmbedTest(unittest.TestCase):
     def test_住所などがHTMLとして解釈されない(self):
         from notebook_harness import load_src_module
