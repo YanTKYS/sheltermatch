@@ -174,6 +174,7 @@ assigned_shelters.csv / sheltermatch_review.zip
 | `test/` | 回帰テストと、個人情報を含まない確認用サンプル |
 | [`experiments/`](experiments/README.md) | 本番処理ではない検証・調査・PoC（住所変換方式の検証、ハザードのジオメトリ調査、性能確認用の架空データ、BODIK/GSI比較） |
 | `docs/` | データ取得手順・現状整理などの詳細ドキュメント |
+| [`LICENSE`](LICENSE) / [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) | 自作部分のMIT License全文／ライセンスの適用範囲と第三者の著作物・データの整理 |
 
 `sheltermatch.ipynb` は、Google Colab での実行時に `src/` 配下のファイルと、自治体の設定ファイル
 （`configs/<CONFIG_NAME>.json`）を GitHub から取得して読み込みます（設定ファイルも同じ版から取得します）。
@@ -222,6 +223,28 @@ v1.2.0 は、この業務要件を維持したまま、自治体ごとの設定�
 内容と理由は [docs/notes/v1.0.0-extended-features.md](docs/notes/v1.0.0-extended-features.md)、変更点は
 [CHANGELOG.md](CHANGELOG.md) を参照してください。
 
+## ライセンス
+
+このリポジトリの自作部分（Notebook・Pythonモジュール・レビュー画面のHTML/CSS/JavaScript・設定・テスト・文書）は、
+[MIT License](LICENSE) で提供します（Copyright (c) 2026 YanTKYS）。
+
+次のものには、MIT License を **適用しません**。それぞれの提供元の著作権表示・ライセンス・利用条件に従ってください。
+範囲と、確認が済んでいない事項は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) にまとめています。
+
+- 外部のデータ（BODIK の指定緊急避難場所、国土数値情報 A31a / A33、沖縄県のハザードデータ、デジタル庁ABR、
+  国土地理院タイルなど）。リポジトリには含めていません。データごとに利用条件・出典表示が異なります
+- 地図ライブラリ Leaflet（BSD-2-Clause。`sheltermatch_review.zip` の `assets/leaflet-LICENSE.txt` を維持）、
+  Python / Google Colab の依存ライブラリ
+- 要支援者の氏名・住所・座標等、`assigned_shelters.csv`、`sheltermatch_review.zip` 内の利用者データ
+- `docs/images/` のスクリーンショットなど、第三者の画像・データを含む一部のファイル（一覧は THIRD_PARTY_NOTICES.md）
+
+`sheltermatch_review.zip` には、自作の画面部分の MIT License 全文（`LICENSE.txt`）と、同梱物ごとの権利の整理
+（`THIRD_PARTY_NOTICES.txt`）を入れています（Notebookが取得するコードの版に、この変更が入ってから作るZIPから。
+現在の取得先 `v1.2.1` のままでは入りません。版の更新は「6.4」の手順で別に行います）。
+
+この変更は、ライセンスの表示だけです。計算・出力CSVの列・判定・順位付けは変わりません。本ツールは、本人住所の
+ハザード情報と直線距離の近い避難所候補を示す一次資料であり、避難先・経路は職員が判断します。
+
 ## ドキュメント
 
 | ドキュメント | 内容 |
@@ -234,4 +257,5 @@ v1.2.0 は、この業務要件を維持したまま、自治体ごとの設定�
 | [docs/performance-test.md](docs/performance-test.md) | 処理時間の確認記録（v1.0.0 時点） |
 | [docs/road-routes-check.md](docs/road-routes-check.md) | 道路に沿った参考経路の確認記録（v1.0.0 時点。通常運用から外した機能） |
 | [docs/pre-production-check-2026-09-28.md](docs/pre-production-check-2026-09-28.md) | 実データ投入前の事前確認（サンドボックスでの確認結果と対応案。その後の対応状況・実機確認の結果を追記） |
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | ライセンスの適用範囲、外部データ・ライブラリの権利と確認状況 |
 | [CHANGELOG.md](CHANGELOG.md) | 変更履歴 |

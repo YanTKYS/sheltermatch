@@ -12,6 +12,7 @@ import json
 import re
 import sys
 import unittest
+from pathlib import Path
 
 import fake_data
 from notebook_harness import NotebookRun, code_cells
@@ -85,6 +86,26 @@ class NotebookEndToEndWithHazardTest(unittest.TestCase):
         self.assertIn("sheltermatch_review/assets/basemap.png", names)
         # 道路経路・OpenStreetMapの道路データに関するファイルは含めない
         self.assertFalse([n for n in names if "osm" in n.lower() or "road" in n.lower()])
+
+    def test_レビューZIPに自作部分のMITと第三者通知を同梱する(self):
+        # リポジトリ直下のLICENSE（正式なMIT本文）と同じ内容を、ZIPにも入れる
+        repo_license = (Path(__file__).resolve().parent.parent / "LICENSE").read_text(encoding="utf-8")
+        with self.run_.review_zip() as archive:
+            names = archive.namelist()
+            self.assertIn("sheltermatch_review/LICENSE.txt", names)
+            self.assertIn("sheltermatch_review/THIRD_PARTY_NOTICES.txt", names)
+            self.assertEqual(archive.read("sheltermatch_review/LICENSE.txt").decode("utf-8"), repo_license)
+            notices = archive.read("sheltermatch_review/THIRD_PARTY_NOTICES.txt").decode("utf-8")
+        for expected in ("MIT License", "Leaflet", "assets/leaflet-LICENSE.txt", "gsi-basemap-NOTICE.txt",
+                         "MIT Licenseの対象外"):
+            self.assertIn(expected, notices)
+
+    def test_既存の第三者通知は維持される(self):
+        # 実際の取得処理は差し替えて動かさないため、同梱するファイルの定義と、背景地図のNOTICEの文面で確認する
+        builder = self.run_.namespace["review_builder"]
+        self.assertIn("leaflet-LICENSE.txt", [package_path for _, package_path, _ in builder.LEAFLET_FILES])
+        self.assertEqual(builder.LEAFLET_VERSION, "1.9.4")
+        self.assertEqual(builder.GSI_ATTRIBUTION_TEXT, "国土地理院")
 
     def test_外部通信はGitHubの取得とBODIK_APIだけ_道路データは取得しない(self):
         for url in self.run_.urls:
