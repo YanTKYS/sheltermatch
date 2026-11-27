@@ -113,6 +113,10 @@ class NotebookRun:
         self.namespace = {"__name__": "__main__", "display": lambda *args, **kwargs: None}
         self.workdir = None
         self.config_overrides = {}
+        # 避難所一覧をCSVで渡す場合（設定が csv のとき、またはAPI取得に失敗して切り替わるとき）のアップロード内容
+        self.shelters_csv = None
+        # True なら、BODIK API への接続が失敗した状態にする（CSVアップロードへの切り替えを確認する）
+        self.bodik_fails = False
 
     # ---- 差し替え ----
     def _fake_get(self, url, *args, **kwargs):
@@ -133,6 +137,8 @@ class NotebookRun:
                 return FakeResponse(status_code=404)
             return FakeResponse(target.read_bytes())
         if url.startswith(BODIK_API_PREFIX):
+            if self.bodik_fails:
+                raise requests.ConnectionError("テスト用: BODIK APIへ接続できません")
             return FakeResponse(bodik_response(self.shelters))
         raise AssertionError(f"テスト中に想定していない外部通信です: {url}")
 
@@ -163,6 +169,8 @@ class NotebookRun:
         for name, value in (settings or {}).items():
             self.config_overrides[names[name]] = eval(value, {"True": True, "False": False})
         uploads = [{"residents.csv": self.residents_csv}]
+        if self.shelters_csv is not None:
+            uploads.append({"shelters.csv": self.shelters_csv})
         if self.hazard_uploads is not None:
             uploads.append(self.hazard_uploads)
         fake_files = FakeFiles(uploads)

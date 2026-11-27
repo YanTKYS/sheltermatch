@@ -95,6 +95,23 @@ GSI_TILE_SIZE = 256
 # 場合は、黙って大量取得せず処理を中止する。上限200枚は、zoom15で概ね市街地1つ分の
 # 範囲を想定した値。
 BASEMAP_FILENAME = "basemap.png"
+
+GSI_NOTICE_FILENAME = "gsi-basemap-NOTICE.txt"
+GSI_TERMS_URL = "https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html"
+GSI_BASEMAP_NOTICE_TEXT = (
+    "背景地図について\n"
+    "\n"
+    f"このフォルダの {BASEMAP_FILENAME} は、"
+    "国土地理院の地理院タイル（淡色地図）を、このレビュー成果物を作成した時点で取得し、"
+    "複数のタイルを結合して表示範囲に切り出し、1枚の画像（PNG）に加工して保存したものです"
+    "（国土地理院が作成した画像そのものではありません）。\n"
+    "\n"
+    f"出典: {GSI_ATTRIBUTION_TEXT}（地理院タイル, https://maps.gsi.go.jp/）\n"
+    "利用条件は国土地理院の公式情報を確認してください。\n"
+    f"{GSI_TERMS_URL}\n"
+    "\n"
+    "review.html は展開後、これらの画像も含め外部通信なしで利用できます。\n"
+)
 BASEMAP_ZOOM_CANDIDATES = [15, 14, 13, 12, 11]
 BASEMAP_MAX_TILES = 200
 
@@ -133,8 +150,69 @@ SOFTWARE.
 LICENSE_FILENAME = "LICENSE.txt"
 THIRD_PARTY_NOTICES_FILENAME = "THIRD_PARTY_NOTICES.txt"
 
+# ---- 避難所データの出典 ----
+# 既定で取得する避難所データ（BODIK Data API の resource_id）のうち、公式ページで出典・利用条件を確認できたもの。
+# ここに無いデータ（他の自治体・利用者が持ち込んだCSV・取得に失敗してCSVへ切り替えたとき）には、
+# このデータの出典・ライセンスを付けない。利用条件は、データの提供元で確認する案内だけを出す。
+KNOWN_SHELTER_DATASETS = {
+    "3132a0a4-f522-4b2d-bf18-f106d8b3a5ae": {
+        "title": "【糸満市】指定緊急避難場所一覧（BODIK 自治体標準オープンデータセット）",
+        "publisher": "糸満市（担当: 情報政策課）",
+        "dataset_url": "https://data.bodik.jp/dataset/472107_evacuation_space",
+        "resource_url": "https://data.bodik.jp/dataset/472107_evacuation_space/resource/"
+                        "3132a0a4-f522-4b2d-bf18-f106d8b3a5ae",
+        "license_name": "クリエイティブ・コモンズ 表示 4.0 国際（CC BY 4.0）",
+        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    },
+}
+
+# Notebookは、避難所一覧の取得方法を shelters_valid.attrs["shelter_origin"] に残す（build_review_package の
+# 引数は増やさない。取得する版が古いモジュールでも、Notebookが同じように動くようにするため）。
+#   {"kind": "bodik_api", "resource_id": "..."}  … BODIK Data API から取得できたとき
+#   {"kind": "csv"}                                … CSVのアップロード（指定したとき・API取得に失敗して切り替えたとき）
+# 何も残っていない場合は、出どころ不明のデータとして扱い、特定のデータの出典は付けない。
+SHELTER_ORIGIN_ATTR = "shelter_origin"
+
+
+def shelter_data_notice(shelter_origin):
+    """避難所の名称・位置の出典と利用条件の通知文（THIRD_PARTY_NOTICES.txt の5の後半）を返す。
+    出典・ライセンスを付けるのは、BODIK APIから、出典を確認済みのデータ（KNOWN_SHELTER_DATASETS）を取得できたときだけ。"""
+    origin = shelter_origin if isinstance(shelter_origin, dict) else {}
+    dataset = None
+    if origin.get("kind") == "bodik_api":
+        dataset = KNOWN_SHELTER_DATASETS.get(str(origin.get("resource_id")))
+
+    if dataset is not None:
+        return (
+            "   - 避難所の名称・位置（緯度・経度）は、次のオープンデータを BODIK Data API から取得したものです。\n"
+            f"       出典: {dataset['publisher']}「{dataset['title']}」\n"
+            f"       データセット: {dataset['dataset_url']}\n"
+            f"       データ（リソース）: {dataset['resource_url']}\n"
+            f"       ライセンス: {dataset['license_name']}\n"
+            f"       ライセンス全文: {dataset['license_url']}\n"
+            "     sheltermatch は、このデータから名称・緯度・経度の列だけを取り出し（座標が使えない行は距離計算から除外）、\n"
+            "     要支援者の地点との直線距離を計算して、近い順の候補1〜3として並べました。画面に示した候補・距離は、\n"
+            "     この加工をした結果です。糸満市が作成・保証したものではありません。\n"
+            "     この部分は上のライセンス（CC BY 4.0）に従い、MIT Licenseの対象ではありません。\n"
+        )
+    if origin.get("kind") == "bodik_api":
+        return (
+            "   - 避難所の名称・位置は、BODIK Data API から取得した、ここで出典を確認していないデータセットです。\n"
+            "     取得したデータセットの出典・ライセンスを、BODIKの公式ページで確認し、表示してください。\n"
+        )
+    if origin.get("kind") == "csv":
+        return (
+            "   - 避難所の名称・位置は、利用者が用意したCSVから読み込んだものです。出典・利用条件は、そのデータの\n"
+            "     提供元で確認し、必要な出典表示を付けてください（特定のデータの出典は付けていません）。\n"
+        )
+    return (
+        "   - 避難所の名称・位置の出どころを、この成果物は記録していません。出典・利用条件は、使ったデータの\n"
+        "     提供元で確認し、必要な出典表示を付けてください（特定のデータの出典は付けていません）。\n"
+    )
+
+
 # 同梱物ごとの権利の整理。第三者の著作物・データには、自作部分のMIT Licenseを適用しない。
-THIRD_PARTY_NOTICES_TEXT = """\
+THIRD_PARTY_NOTICES_HEAD = """\
 sheltermatch レビュー成果物（sheltermatch_review）の権利・利用条件について
 
 このフォルダには、性格の異なるものが入っています。MIT License は、1 の自作部分だけに適用します。
@@ -151,8 +229,10 @@ sheltermatch レビュー成果物（sheltermatch_review）の権利・利用条
 
 3. 背景地図（MIT Licenseの対象外）
    - assets/basemap.png
-   - 国土地理院の地理院タイル（淡色地図）を画像にしたものです。出典・利用条件は
-     assets/gsi-basemap-NOTICE.txt と、画面下部の出典表示のとおりです。
+   - 国土地理院の地理院タイル（淡色地図）を取得し、タイルを結合・切り出して1枚の画像に加工したものです。
+     出典: 国土地理院（地理院タイル） https://maps.gsi.go.jp/
+     利用条件: https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html
+     詳しくは assets/gsi-basemap-NOTICE.txt と、画面下部の出典表示のとおりです。
 
 4. ハザード区域の画像（MIT Licenseの対象外）
    - assets/hazard_*.png（作成したときだけ入ります）
@@ -162,11 +242,17 @@ sheltermatch レビュー成果物（sheltermatch_review）の権利・利用条
 5. 要支援者・避難所のデータ（MIT Licenseの対象外）
    - review.html に埋め込まれた、要支援者の住所・座標・判定結果、避難所の名称・位置・距離など
    - 要支援者のデータは個人情報を含み得ます。所属団体の規程に従って取り扱ってください。
-     避難所の名称・位置は、取得元（BODIK等）の利用条件に従ってください。
+"""
 
+THIRD_PARTY_NOTICES_TAIL = """
 この成果物は、本人住所のハザード情報と直線距離の近い避難所候補を示す一次資料です。避難先や経路を
 決めるものではなく、最終的な判断は職員が行います。
 """
+
+
+def build_third_party_notices(shelter_origin=None):
+    """レビューZIPへ同梱する THIRD_PARTY_NOTICES.txt の全文を返す。"""
+    return THIRD_PARTY_NOTICES_HEAD + shelter_data_notice(shelter_origin) + THIRD_PARTY_NOTICES_TAIL
 REVIEW_IMAGE_WIDTH = 1600  # ハザード表示用PNGの横幅（px）
 
 # 候補避難所の件数（正式仕様として3件固定。assignment モジュールの CANDIDATE_COUNT と同じ値）。
@@ -341,21 +427,7 @@ def render_offline_basemap(bounds, assets_dir):
     ))
     cropped.save(assets_dir / BASEMAP_FILENAME, "PNG")
 
-    notice_path = assets_dir / "gsi-basemap-NOTICE.txt"
-    notice_path.write_text(
-        "背景地図について\n"
-        "\n"
-        f"このフォルダの {BASEMAP_FILENAME} は、"
-        "国土地理院の地理院タイル（淡色地図）を、このレビュー成果物を作成した時点で"
-        "取得し、画像として保存したものです。\n"
-        "\n"
-        f"出典: {GSI_ATTRIBUTION_TEXT}（地理院タイル, https://maps.gsi.go.jp/）\n"
-        "利用条件は国土地理院の公式情報を確認してください。\n"
-        "https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html\n"
-        "\n"
-        "review.html は展開後、これらの画像も含め外部通信なしで利用できます。\n",
-        encoding="utf-8",
-    )
+    (assets_dir / GSI_NOTICE_FILENAME).write_text(GSI_BASEMAP_NOTICE_TEXT, encoding="utf-8")
 
     print(f"背景地図PNGを作成しました（出典: {GSI_ATTRIBUTION_TEXT}）。")
     return {
@@ -470,12 +542,13 @@ def render_hazard_images(hazard_area, layer_specs, display_bounds, assets_dir):
 # 埋め込みデータの組み立てと結果CSVとの照合
 # =============================================================================
 
-def write_license_files(package_dir):
+def write_license_files(package_dir, shelter_origin=None):
     """自作部分のMIT License全文と、同梱物ごとの権利の整理を、成果物のフォルダ直下へ書き出す。
     Leafletのlicense（assets/leaflet-LICENSE.txt）・背景地図のNOTICEは別に書き出すため、ここでは触れない。"""
     package_dir = Path(package_dir)
     (package_dir / LICENSE_FILENAME).write_text(MIT_LICENSE_TEXT, encoding="utf-8")
-    (package_dir / THIRD_PARTY_NOTICES_FILENAME).write_text(THIRD_PARTY_NOTICES_TEXT, encoding="utf-8")
+    (package_dir / THIRD_PARTY_NOTICES_FILENAME).write_text(
+        build_third_party_notices(shelter_origin), encoding="utf-8")
 
 
 def json_value(value):
@@ -740,7 +813,7 @@ def build_review_package(final_df, review_rows, hazard_area, shelters_df, hazard
     template = Path(template_path).read_text(encoding="utf-8")
     html = template.replace("__REVIEW_DATA_JSON__", embed_review_json(review_data))
     (package_dir / "review.html").write_text(html, encoding="utf-8")
-    write_license_files(package_dir)
+    write_license_files(package_dir, shelters_df.attrs.get(SHELTER_ORIGIN_ATTR))
 
     zip_path = Path(output_dir) / REVIEW_ZIP_FILENAME
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
